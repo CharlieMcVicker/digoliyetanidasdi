@@ -40,6 +40,14 @@ from digohwelisgi.alignment.ingestion import (
 from digohwelisgi.alignment.models import CTCAlignerConfig
 from digohwelisgi.cherokee.enrichment import align_character_syllable_detailed
 from digohwelisgi.cherokee.models import CherokeeASRModel
+from digohwelisgi.cherokee.orthography.syllabary_map import (
+    CHEROKEE_SYLLABARY_BASE_MAP as _RAW_SYLLABARY_BASE_MAP,
+)
+
+CHEROKEE_SYLLABARY_BASE_MAP: Dict[str, str] = dict(_RAW_SYLLABARY_BASE_MAP)
+CHEROKEE_SYLLABARY_BASE_MAP["Ᏽ"] = "mv"
+SYL_CHAR_CLASS = r"\u13A0-\u13FF\uAB70-\uABBF"
+SYL_RE = re.compile(f"[{SYL_CHAR_CLASS}]")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +72,10 @@ BIBLE_SPLIT_AUDIO_DIR = (
     WORKSHOP_DIR / "data/projects/cherokee_new_testament/split_audio"
 )
 CTC_CACHE_DIR = WORKSHOP_DIR / ".cache/ctc_emissions"
+STV_DIR = REPO_ROOT / "data/saving-the-voices"
+STV_COLLECTION_JSON = STV_DIR / "saving-the-voices.json"
+STV_TRANSCRIPTS_DIR = STV_DIR / "transcripts"
+KIWA_BASE_URL = "https://cherokee-language-hub.kiwadigital.com"
 
 
 def clean_to_canonical_tth(text: str) -> str:
@@ -420,6 +432,395 @@ def build_bible_corpus(
     logger.info("Ingested %d New Testament verses across %d chapters.", nt_count, len(seen_chapters))
 
 
+def aspirate_syllable(phon: str) -> str:
+    """Aspirates a syllable coda for an internal period (.) diacritic."""
+    if not phon:
+        return phon
+    if not phon.endswith("h"):
+        return phon + "h"
+    return phon
+
+
+def convert_marked_token(raw_tok: str) -> List[Tuple[str, str]]:
+    """
+    Pure transformation converting a raw whitespace token from a marked-up
+    Saving the Voices transcript into a list of (clean_syllabary_display, canonical_tth)
+    word pairs.
+
+    Diacritic rules:
+      - `,` = drop preceding vowel (syncope / apocope)
+      - `;` = drop preceding vowel and add `h`
+      - `.` = add `h` (coda aspiration without dropping vowel)
+      - `:` = long vowel (strip `:`)
+      - `’` / `'` = glottal stop `'` (internal or trailing; stripped when leading apheresis)
+      - `-`, `--`, `...`, `…`, `/` = split stutter/repair/ellipsis into separate words,
+        except English stem + hyphen + Syllabary clitic (e.g. `Bell-Ꭲ` -> `bell'i`).
+      - Pure English words/stems are lowercased without D/G->T/TH consonant mutation.
+      - Displayed syllabary token has all punctuation and diacritics stripped.
+    """
+    # 1. Strip inline timestamps like (16:58) or (18.13) and meta annotations
+    tok = re.sub(r"\(\d+[:.]\d+\)", "", raw_tok)
+    tok = re.sub(
+        r"\((?:unintelligible|unclear|inaudible|laughs|laughter|cough|coughs|sighs|pause)\)",
+        "",
+        tok,
+        flags=re.IGNORECASE,
+    )
+    tok = re.sub(
+        r"\[(?:unintelligible|unclear|inaudible|laughs|laughter|cough|coughs|sighs|pause)\]",
+        "",
+        tok,
+        flags=re.IGNORECASE,
+    )
+
+    # 2. Protect English-Syllabary compound clitic hyphens: e.g. Bell-Ꭲ, $120-Ꮫ, *outhouse*-Ꮽ, ᎠᏂ-Pettit
+    tok = re.sub(
+        f"([a-zA-Z0-9$*’'\"”])-([{SYL_CHAR_CLASS}])",
+        "\\1\x00\\2",
+        tok,
+    )
+    tok = re.sub(
+        f"([{SYL_CHAR_CLASS}])-([a-zA-Z0-9$*‘'\"“])",
+        "\\1\x00\\2",
+        tok,
+    )
+
+    # 3. Split on stutter/repair/pause boundaries: --, —, –, ..., …, /, or remaining single hyphen -
+    parts = re.split(r"--+|—|–|\.\.\.+|…+|/|-", tok)
+
+    results: List[Tuple[str, str]] = []
+    for part in parts:
+        part = part.replace("\x00", "")
+        if not part:
+            continue
+
+        # Remove parenthetical/bracketed wrappers around syllables while keeping content: ᏥᏛ(Ꭹ)ᏓᏁᎸ -> ᏥᏛᎩᏓᏁᎸ
+        part = re.sub(r"[\(\)\[\]\"“”*]", "", part)
+        if not part:
+            continue
+
+        has_syl = bool(SYL_RE.search(part))
+        has_alpha = bool(re.search(r"[a-zA-Z0-9]", part))
+
+        if not has_syl and not has_alpha:
+            continue
+
+        # Pure English/numeric token (no syllabary)
+        if not has_syl:
+            clean_en = re.sub(r"^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$", "", part)
+            if not clean_en:
+                continue
+            tth_en = re.sub(r"[’ʻʼʔ]", "'", clean_en.lower())
+            tth_en = re.sub(r"[^a-z0-9']", "", tth_en)
+            if tth_en:
+                results.append((clean_en, tth_en))
+            continue
+
+        # Token contains Cherokee syllabary (pure or code-switched compound clitic)
+        # Strip leading non-alphanumeric, non-syllabary characters (like leading ‘ or ’ apheresis or quotes)
+        part = re.sub(f"^[^a-zA-Z0-9{SYL_CHAR_CLASS}]+", "", part)
+        if not part:
+            continue
+
+        # Strip trailing sentence-final . ? ! while preserving trailing , ; ’ '
+        part = re.sub(r"[.?!]+$", "", part)
+
+        syl_display_chars: List[str] = []
+        phon_pieces: List[Tuple[str, str, bool]] = []  # (type, phon, had_vowel_drop)
+
+        i = 0
+        n = len(part)
+        while i < n:
+            ch = part[i]
+            if SYL_RE.match(ch):
+                ch_upper = ch.upper()
+                syl_display_chars.append(ch_upper)
+                base_phon = CHEROKEE_SYLLABARY_BASE_MAP.get(ch_upper, ch_upper)
+                j = i + 1
+                diacritics: List[str] = []
+                while j < n and not SYL_RE.match(part[j]) and not part[j].isalnum():
+                    diacritics.append(part[j])
+                    j += 1
+
+                has_comma = "," in diacritics or "‚" in diacritics
+                has_semi = ";" in diacritics
+                has_dot = "." in diacritics
+                has_apo = any(d in ("’", "'", "‘", "ʼ", "ʻ") for d in diacritics)
+
+                if has_semi:
+                    if base_phon and base_phon[-1] in "aeiouv":
+                        base_phon = base_phon[:-1] + "h"
+                    elif not base_phon.endswith("h"):
+                        base_phon = base_phon + "h"
+                elif has_comma:
+                    if base_phon and base_phon[-1] in "aeiouv" and len(base_phon) > 1:
+                        base_phon = base_phon[:-1]
+
+                if has_dot:
+                    base_phon = aspirate_syllable(base_phon)
+
+                if has_apo:
+                    base_phon = base_phon + "'"
+
+                phon_pieces.append(("syl", base_phon, has_comma or has_semi))
+                i = j
+            elif ch.isalnum():
+                j = i
+                while (
+                    j < n
+                    and not SYL_RE.match(part[j])
+                    and (
+                        part[j].isalnum()
+                        or (
+                            part[j] in ("’", "'")
+                            and j + 1 < n
+                            and part[j + 1].isalpha()
+                            and not SYL_RE.match(part[j + 1])
+                        )
+                    )
+                ):
+                    j += 1
+                en_chunk = part[i:j]
+                syl_display_chars.append(en_chunk)
+                en_clean = en_chunk.lower().replace("’", "'")
+                while j < n and not SYL_RE.match(part[j]) and not part[j].isalnum():
+                    j += 1
+                phon_pieces.append(("en", en_clean, False))
+                i = j
+            else:
+                i += 1
+
+        syl_disp = "".join(syl_display_chars)
+        if not syl_disp:
+            continue
+
+        combined = ""
+        for idx_p, (ptype, pval, _had_drop) in enumerate(phon_pieces):
+            if ptype == "syl":
+                if idx_p > 0 and phon_pieces[idx_p - 1][0] == "en":
+                    if pval and pval[0] in "aeiouv" and not combined.endswith("'"):
+                        combined += "'" + pval
+                    else:
+                        combined += pval
+                else:
+                    if (
+                        idx_p > 0
+                        and phon_pieces[idx_p - 1][0] == "syl"
+                        and not phon_pieces[idx_p - 1][2]
+                        and combined
+                        and combined[-1] in "aeiouv"
+                        and pval.startswith("s")
+                    ):
+                        combined += "h" + pval
+                    elif (
+                        idx_p > 0
+                        and phon_pieces[idx_p - 1][0] == "syl"
+                        and combined
+                        and combined[-1] in "aeiouv"
+                        and pval
+                        and pval[0] in "aeiouv"
+                    ):
+                        combined += "'" + pval
+                    else:
+                        combined += pval
+            else:
+                combined += pval
+
+        # Collapse duplicate h and duplicate '
+        combined = re.sub(r"h+", "h", combined)
+        combined = re.sub(r"'+", "'", combined)
+        if combined:
+            results.append((syl_disp, combined))
+
+    return results
+
+
+def convert_marked_segment(raw_text: str) -> Tuple[str, str, List[str]]:
+    """
+    Converts a full Saving the Voices segment.text string into:
+      (syllabary_text, phonetic_text, phonetic_words)
+    where len(syllabary_text.split()) == len(phonetic_text.split()) == len(phonetic_words).
+    """
+    text = re.sub(r"ᎾᎿ\s*Ꭽ\s*", "ᎾᎿ ", raw_text)
+    syl_words: List[str] = []
+    phon_words: List[str] = []
+    for raw_tok in text.split():
+        for s_w, p_w in convert_marked_token(raw_tok):
+            if s_w and p_w:
+                syl_words.append(s_w)
+                phon_words.append(p_w)
+    return " ".join(syl_words), " ".join(phon_words), phon_words
+
+
+def _format_mm_ss(seconds: float) -> str:
+    total_sec = max(0, int(round(seconds)))
+    mins, secs = divmod(total_sec, 60)
+    return f"{mins}:{secs:02d}"
+
+
+def _format_speaker_name(speaker_slug: str) -> str:
+    if not speaker_slug:
+        return ""
+    return " ".join(part.capitalize() for part in speaker_slug.replace("_", "-").split("-") if part)
+
+
+def build_saving_the_voices_corpus(
+    sources: List[Dict[str, Any]],
+    phrases: List[Dict[str, Any]],
+) -> None:
+    """
+    Ingests the 22 Saving the Voices interviews that have both Cherokee syllabary text
+    and startMs/endMs audio timestamps, linking directly to the remote Kiwa Digital MP3 URLs.
+    """
+    if not STV_COLLECTION_JSON.exists():
+        logger.warning("Saving the Voices collection JSON not found at %s; skipping.", STV_COLLECTION_JSON)
+        return
+
+    with open(STV_COLLECTION_JSON, "r", encoding="utf-8") as f:
+        collection_data = json.load(f)
+
+    assets = collection_data.get("assets", [])
+    stv_sources_count = 0
+    stv_phrases_count = 0
+
+    for asset in assets:
+        transcript_rel_url = asset.get("transcriptUrl")
+        if not transcript_rel_url:
+            continue
+
+        transcript_filename = Path(transcript_rel_url).name
+        transcript_path = STV_TRANSCRIPTS_DIR / transcript_filename
+        if not transcript_path.exists():
+            continue
+
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            t_data = json.load(f)
+
+        segments = t_data.get("segments", [])
+        has_syl = any(SYL_RE.search(s.get("text") or "") for s in segments)
+        has_time = any(
+            s.get("startMs") is not None and s.get("endMs") is not None
+            for s in segments
+        )
+        if not (has_syl and has_time):
+            continue
+
+        asset_id: str = asset.get("id", transcript_path.stem)
+        # Extract numeric index from asset_id (e.g. saving-the-voices-0001-toney-cornshucker -> 1)
+        num_match = re.search(r"saving-the-voices-(\d+)-(.+)", asset_id)
+        if num_match:
+            interview_num = int(num_match.group(1))
+            slug_rest = num_match.group(2).replace("-", "_")
+            source_id = f"stv_{interview_num:04d}_{slug_rest}"
+        else:
+            interview_num = stv_sources_count + 1
+            source_id = f"stv_{asset_id.replace('-', '_')}"
+
+        title_en = (asset.get("title") or asset_id).strip()
+        title_syl = (asset.get("titleSyllabary") or "").strip()
+        display_title = (
+            f"Saving the Voices: {title_en} ({title_syl})"
+            if title_syl
+            else f"Saving the Voices: {title_en}"
+        )
+
+        media_rel_url = (asset.get("url") or "").strip()
+        remote_audio_url = (
+            f"{KIWA_BASE_URL}{media_rel_url}"
+            if media_rel_url.startswith("/")
+            else media_rel_url
+        )
+
+        added_source = False
+        for seg_idx, seg in enumerate(segments, start=1):
+            raw_text = (seg.get("text") or "").strip()
+            if not raw_text or not SYL_RE.search(raw_text):
+                continue
+            start_ms = seg.get("startMs")
+            end_ms = seg.get("endMs")
+            if start_ms is None or end_ms is None:
+                continue
+
+            syl_text, phon_text, phon_words = convert_marked_segment(raw_text)
+            if not phon_words:
+                continue
+
+            assert len(syl_text.split()) == len(phon_text.split()) == len(phon_words), (
+                f"1:1 token mismatch in {asset_id} {seg.get('id')}: "
+                f"syl={len(syl_text.split())}, phon={len(phon_text.split())}"
+            )
+
+            if not added_source:
+                sources.append(
+                    {
+                        "source_id": source_id,
+                        "source_type": "marked_syllabary_corpus",
+                        "title": display_title,
+                        "sort_order": 2000 + interview_num,
+                    }
+                )
+                added_source = True
+                stv_sources_count += 1
+
+            start_sec = round(max(0.0, float(start_ms) / 1000.0), 3)
+            end_sec = round(max(start_sec, float(end_ms) / 1000.0), 3)
+
+            seg_id_raw = str(seg.get("id") or f"seg-{seg_idx:03d}")
+            seg_num_match = re.search(r"(\d+)", seg_id_raw)
+            seg_num = int(seg_num_match.group(1)) if seg_num_match else seg_idx
+
+            speaker_label = (
+                (seg.get("speakerLabel") or "").strip()
+                or _format_speaker_name(str(seg.get("speaker") or ""))
+            )
+            time_str = _format_mm_ss(start_sec)
+            loc_label = (
+                f"Seg {seg_num:03d} ({time_str}) • {speaker_label}"
+                if speaker_label
+                else f"Seg {seg_num:03d} ({time_str})"
+            )
+
+            words_array: List[Dict[str, Any]] = [
+                {
+                    "word": w_tok,
+                    "start": start_sec,
+                    "end": end_sec,
+                    "confidence": 1.0,
+                    "flagged": False,
+                }
+                for w_tok in phon_words
+            ]
+
+            english_clean = (seg.get("translation") or "").strip() or None
+
+            phrases.append(
+                {
+                    "id": f"{source_id}_seg_{seg_num:04d}",
+                    "source_id": source_id,
+                    "loc_label": loc_label,
+                    "loc_index": seg_num,
+                    "phonetic_text": phon_text,
+                    "phonetic_broad": create_broad_tth(phon_text),
+                    "syllabary_text": syl_text,
+                    "english_text": english_clean,
+                    "audio_path": remote_audio_url,
+                    "audio_start": start_sec,
+                    "audio_end": end_sec,
+                    "mean_confidence": 1.0,
+                    "min_confidence": 1.0,
+                    "has_anomalies": False,
+                    "words": words_array,
+                }
+            )
+            stv_phrases_count += 1
+
+    logger.info(
+        "Ingested %d Saving the Voices segments across %d interviews.",
+        stv_phrases_count,
+        stv_sources_count,
+    )
+
+
 def ensure_audio_symlinks() -> None:
     """Creates symlinks in public/ pointing to sentence_audio and split_audio."""
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -445,10 +846,22 @@ def main() -> None:
         help="Include New Testament verses (default: True)",
     )
     parser.add_argument(
+        "--include-stv",
+        action="store_true",
+        default=True,
+        help="Include Saving the Voices interviews (default: True)",
+    )
+    parser.add_argument(
         "--dict-only",
         action="store_true",
         default=False,
         help="Only build Dictionary examples (Phase 1 only)",
+    )
+    parser.add_argument(
+        "--reuse-existing-dict-nt",
+        action="store_true",
+        default=False,
+        help="Reuse existing Dictionary and New Testament records from public/data/ if present",
     )
     args = parser.parse_args()
 
@@ -458,9 +871,29 @@ def main() -> None:
     sources: List[Dict[str, Any]] = []
     phrases: List[Dict[str, Any]] = []
 
-    build_dictionary_corpus(sources, phrases)
-    if args.include_nt and not args.dict_only:
-        build_bible_corpus(sources, phrases)
+    sources_out = DATA_OUT_DIR / "sources.json"
+    phrases_out = DATA_OUT_DIR / "phrases.json"
+
+    if args.reuse_existing_dict_nt and sources_out.exists() and phrases_out.exists():
+        logger.info("Reusing existing Dictionary & NT records from %s", DATA_OUT_DIR)
+        with open(sources_out, "r", encoding="utf-8") as f:
+            existing_sources = json.load(f)
+        with open(phrases_out, "r", encoding="utf-8") as f:
+            existing_phrases = json.load(f)
+        kept_source_ids = {
+            s["source_id"]
+            for s in existing_sources
+            if s.get("source_type") in ("dictionary_collection", "biblical_chapter")
+        }
+        sources.extend(s for s in existing_sources if s["source_id"] in kept_source_ids)
+        phrases.extend(p for p in existing_phrases if p["source_id"] in kept_source_ids)
+    else:
+        build_dictionary_corpus(sources, phrases)
+        if args.include_nt and not args.dict_only:
+            build_bible_corpus(sources, phrases)
+
+    if args.include_stv and not args.dict_only:
+        build_saving_the_voices_corpus(sources, phrases)
 
     sources.sort(key=lambda s: s["sort_order"])
 

@@ -321,6 +321,21 @@ Expand `scripts/build_corpus.py` to ingest the 1,749 aligned Cherokee New Testam
 
 ---
 
-## Phase 3: Marked-Up Syllabary Corpus Ingestion (Syncope & Code-Switching)
+## Phase 3: Marked-Up Syllabary Corpus Ingestion (Saving the Voices)
 
-*(Deferred until web scraping / source ingestion step after Phases 1 and 2 are complete.)*
+### Goal
+
+Scrape `saving-the-voices.json` and all 66 referenced transcript JSONs from `https://cherokee-language-hub.kiwadigital.com/content/collections/saving-the-voices.json` into `data/saving-the-voices/`, and ingest the 22 interviews (7,530 Cherokee/code-switched segments) that contain both Cherokee syllabary text and `startMs`/`endMs` audio timestamps.
+
+### Step 3.1: Diacritic-Aware Syllabary-to-Phonetics Conversion (`convert_marked_token`)
+
+1. Process inline punctuation attached to syllabary characters as phonetic diacritics:
+   * `,` = drop preceding vowel (syncope/apocope)
+   * `;` = drop preceding vowel and add `h`
+   * `.` = insert `h` (coda aspiration without dropping vowel)
+   * `:` = long vowel (strip `:`)
+   * `’` / `'` = glottal stop `'` when internal or trailing; strip when word-initial apheresis (`‘Ꮩ` -> `to`)
+   * `-`, `--`, `...`, `…` = split stutter/repair/ellipsis into separate words, except English stem + hyphen + Syllabary clitic (`Bell-Ꭲ` -> `bell'i`)
+   * English words/stems are lowercased without D/G→T/TH consonant mutation.
+2. Strip all punctuation and diacritics from displayed `syllabary_text` while maintaining 1:1 token correspondence with `phonetic_text` and `words[]`.
+3. Link `audio_path` directly to remote Kiwa Digital MP3 URLs with `audio_start` and `audio_end`, using a native HTML `<audio>` segment player in `PhraseCard` and displaying a `"Segment Audio (Unaligned)"` badge (with local audio segmentation and CTC forced alignment tracked in `TASK-6`).

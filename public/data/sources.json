@@ -268,5 +268,137 @@
     "source_type": "dictionary_collection",
     "title": "Cherokee Dictionary Examples (1975 Feeling)",
     "sort_order": 1000
+  },
+  {
+    "source_id": "stv_0001_toney_cornshucker",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Toney Cornshucker (ᏙᎾ)",
+    "sort_order": 2001
+  },
+  {
+    "source_id": "stv_0002_charley_mary_mccoy",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Charley & Mary McCoy (ᏣᎵ  ᎺᎵ)",
+    "sort_order": 2002
+  },
+  {
+    "source_id": "stv_0003_dj_vann",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: DJ Vann (ᎦᎨᏓ)",
+    "sort_order": 2003
+  },
+  {
+    "source_id": "stv_0004_jerry_mary_scott",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Jerry & Mary Scott (ᏩᎴᎳᏂᏓ  ᎺᎵ)",
+    "sort_order": 2004
+  },
+  {
+    "source_id": "stv_0005_martin_ballou",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Martin Ballou (ᏡᏡ)",
+    "sort_order": 2005
+  },
+  {
+    "source_id": "stv_0006_edward_bunch_mack_flynn",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Edward Bunch & Mack Flynn (ᎠᏓᎨᎮᎦ  ᎤᏥᏣᏗ)",
+    "sort_order": 2006
+  },
+  {
+    "source_id": "stv_0007_dj_francis_mccarter",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: DJ & Francis McCarter (ᎤᏍᎩᏳᎩ  ᏅᏥ)",
+    "sort_order": 2007
+  },
+  {
+    "source_id": "stv_0008_dora_dunn_elsie_pritchett",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Dora Dunn & Elsie Pritchett (ᏥᎨᏳ  ᎡᎵᏏ)",
+    "sort_order": 2008
+  },
+  {
+    "source_id": "stv_0009_bird_wolfe",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Bird Wolfe (ᏥᏍᏆ)",
+    "sort_order": 2009
+  },
+  {
+    "source_id": "stv_0010_mary_mccoy",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Mary McCoy (ᎺᎵ ᎹᎦᏱ)",
+    "sort_order": 2010
+  },
+  {
+    "source_id": "stv_0011_naomi_stone",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Naomi \"ᏣᏁᏂ\" Stone (ᏌᎵ ᎬᏬᏎᎰ)",
+    "sort_order": 2011
+  },
+  {
+    "source_id": "stv_0012_harry_daugherty",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Harry Daugherty 2023 (ᎠᏂᏲᏍᎩ)",
+    "sort_order": 2012
+  },
+  {
+    "source_id": "stv_0014_janet_navarro",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Janet Navarro (ᏥᏴᏂᏍᏗ)",
+    "sort_order": 2014
+  },
+  {
+    "source_id": "stv_0015_lillie_vann",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Lillie Vann (ᏏᎾᏍᏗ)",
+    "sort_order": 2015
+  },
+  {
+    "source_id": "stv_0019_bud_foreman",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Bud Foreman (ᏧᏓᎡᎩ)",
+    "sort_order": 2019
+  },
+  {
+    "source_id": "stv_0022_michael_pritchett",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Michael Pritchett (ᏌᎶᎵ)",
+    "sort_order": 2022
+  },
+  {
+    "source_id": "stv_0051_billy_pettit",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Billy Pettit (ᎤᏂᎲᎷᎩ)",
+    "sort_order": 2051
+  },
+  {
+    "source_id": "stv_0059_lucy_anderson_emma_falling",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Lucy Anderson & Emma Falling (ᎣᎵᎩᏂ  ᎹᎦᏕᎳ)",
+    "sort_order": 2059
+  },
+  {
+    "source_id": "stv_0064_felix_leroy_sanders",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Felix & Leroy Sanders (ᏤᏡᎩ  ᎵᏫ)",
+    "sort_order": 2064
+  },
+  {
+    "source_id": "stv_0067_lillie_vann_carolyn_fourkiller",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Lillie Vann & Carolyn Fourkiller (ᏏᎾᏍᏗ  ᎫᏫᏍᏗ)",
+    "sort_order": 2067
+  },
+  {
+    "source_id": "stv_0076_randy_duncan",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Randy Duncan (ᎤᏏᏅᏓ)",
+    "sort_order": 2076
+  },
+  {
+    "source_id": "stv_0088_bobby_pettit",
+    "source_type": "marked_syllabary_corpus",
+    "title": "Saving the Voices: Bobby Pettit 2 (ᏗᎫᏖᏍᎩ)",
+    "sort_order": 2088
   }
 ]

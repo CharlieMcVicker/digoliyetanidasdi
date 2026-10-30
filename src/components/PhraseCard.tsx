@@ -75,12 +75,23 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
 }) => {
   const waveformContainerRef = useRef<HTMLDivElement | null>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
+  const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+
+  const isRemoteAudio =
+    phrase.audio_path.startsWith('http://') ||
+    phrase.audio_path.startsWith('https://');
+  const segmentStart = phrase.audio_start || 0;
+  const segmentEnd = phrase.audio_end || 0;
+  const segmentDuration = Math.max(
+    0,
+    isRemoteAudio ? segmentEnd - segmentStart : segmentEnd
+  );
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(phrase.audio_end || 0);
+  const [duration, setDuration] = useState(segmentDuration);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [activeWordIdx, setActiveWordIdx] = useState<number>(-1);
 
@@ -95,24 +106,39 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
 
   // Pause if another phrase becomes the active audio player
   useEffect(() => {
-    if (!isActiveAudio && wavesurferRef.current && isPlaying) {
-      wavesurferRef.current.pause();
+    if (!isActiveAudio && isPlaying) {
+      if (wavesurferRef.current) {
+        wavesurferRef.current.pause();
+      }
+      if (htmlAudioRef.current) {
+        htmlAudioRef.current.pause();
+      }
       setIsPlaying(false);
       setActiveWordIdx(-1);
     }
   }, [isActiveAudio, isPlaying]);
 
-  // Clean up WaveSurfer on unmount
+  // Clean up WaveSurfer / HTMLAudioElement on unmount
   useEffect(() => {
     return () => {
       if (wavesurferRef.current) {
         wavesurferRef.current.destroy();
         wavesurferRef.current = null;
       }
+      if (htmlAudioRef.current) {
+        htmlAudioRef.current.pause();
+        htmlAudioRef.current.src = '';
+        htmlAudioRef.current = null;
+      }
     };
   }, []);
 
   const updateActiveWordFromTime = (t: number) => {
+    if (isRemoteAudio) {
+      const rel = Math.max(0, Math.min(segmentDuration, t - segmentStart));
+      setCurrentTime(rel);
+      return;
+    }
     setCurrentTime(t);
     const idx = phrase.words.findIndex(w => t >= w.start && t <= w.end);
     setActiveWordIdx(idx);
@@ -120,6 +146,65 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
 
   const ensureWaveSurferAndPlay = (seekToSeconds?: number) => {
     onActivateAudio(phrase.id);
+
+    if (isRemoteAudio) {
+      const targetTime =
+        seekToSeconds !== undefined ? Math.max(segmentStart, seekToSeconds) : segmentStart;
+
+      if (htmlAudioRef.current) {
+        const audio = htmlAudioRef.current;
+        if (seekToSeconds !== undefined) {
+          audio.currentTime = targetTime;
+          setCurrentTime(Math.max(0, targetTime - segmentStart));
+          void audio.play();
+        } else if (!audio.paused) {
+          audio.pause();
+        } else {
+          if (
+            audio.currentTime < segmentStart ||
+            (segmentEnd > segmentStart && audio.currentTime >= segmentEnd - 0.05)
+          ) {
+            audio.currentTime = segmentStart;
+            setCurrentTime(0);
+          }
+          void audio.play();
+        }
+        return;
+      }
+
+      const audio = new Audio(phrase.audio_path);
+      audio.preload = 'metadata';
+      audio.playbackRate = playbackRate;
+
+      audio.addEventListener('loadedmetadata', () => {
+        setIsReady(true);
+        audio.currentTime = targetTime;
+        setCurrentTime(Math.max(0, targetTime - segmentStart));
+        void audio.play();
+      });
+
+      audio.addEventListener('timeupdate', () => {
+        if (segmentEnd > segmentStart && audio.currentTime >= segmentEnd) {
+          audio.pause();
+          audio.currentTime = segmentStart;
+          setIsPlaying(false);
+          setCurrentTime(segmentDuration);
+          return;
+        }
+        updateActiveWordFromTime(audio.currentTime);
+      });
+
+      audio.addEventListener('play', () => setIsPlaying(true));
+      audio.addEventListener('pause', () => setIsPlaying(false));
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+      });
+
+      htmlAudioRef.current = audio;
+      audio.load();
+      return;
+    }
 
     if (wavesurferRef.current && isReady) {
       const ws = wavesurferRef.current;
@@ -193,6 +278,9 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
     if (wavesurferRef.current) {
       wavesurferRef.current.setPlaybackRate(newRate);
     }
+    if (htmlAudioRef.current) {
+      htmlAudioRef.current.playbackRate = newRate;
+    }
   };
 
   const phraseConfStyle = getConfidenceColorClasses(
@@ -233,7 +321,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                 : 'English'}
           </span>
 
-          {phrase.matchType !== 'english' && (
+          {phrase.matchType !== 'english' && !isRemoteAudio && (
             <span
               className={`inline-flex items-center gap-1 text-xs font-mono font-medium px-2.5 py-0.5 rounded-full border ${matchedConfStyle.badge}`}
               title="Audio alignment confidence of the matched query word(s)"
@@ -244,19 +332,29 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
           )}
         </div>
 
-        {/* Phrase Confidence Badge */}
+        {/* Phrase Confidence Badge / Segment Audio Badge */}
         <div className="flex items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-0.5 rounded-full border ${phraseConfStyle.badge}`}
-            title={`Phrase Mean Confidence: ${(phrase.mean_confidence * 100).toFixed(1)}% | Min Word Confidence: ${(phrase.min_confidence * 100).toFixed(1)}%`}
-          >
-            {phrase.has_anomalies ? (
-              <AlertTriangle className="w-3.5 h-3.5" />
-            ) : (
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            )}
-            Phrase Conf: {(phrase.mean_confidence * 100).toFixed(1)}%
-          </span>
+          {isRemoteAudio ? (
+            <span
+              className="inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-0.5 rounded-full border bg-slate-800/80 text-slate-300 border-slate-700"
+              title={`Segment Audio: ${segmentStart.toFixed(2)}s – ${segmentEnd.toFixed(2)}s (word-level ASR alignment deferred)`}
+            >
+              <Volume2 className="w-3.5 h-3.5 text-sky-400" />
+              Segment Audio (Unaligned)
+            </span>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1.5 text-xs font-mono px-2.5 py-0.5 rounded-full border ${phraseConfStyle.badge}`}
+              title={`Phrase Mean Confidence: ${(phrase.mean_confidence * 100).toFixed(1)}% | Min Word Confidence: ${(phrase.min_confidence * 100).toFixed(1)}%`}
+            >
+              {phrase.has_anomalies ? (
+                <AlertTriangle className="w-3.5 h-3.5" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              )}
+              Phrase Conf: {(phrase.mean_confidence * 100).toFixed(1)}%
+            </span>
+          )}
         </div>
       </div>
 
@@ -283,7 +381,9 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                 onClick={() => handleWordClick(idx)}
                 title={
                   wMeta
-                    ? `${wMeta.word} • Conf: ${(wMeta.confidence * 100).toFixed(1)}% (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) — Click to play`
+                    ? isRemoteAudio
+                      ? `${wMeta.word} • Segment (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) — Click to play segment`
+                      : `${wMeta.word} • Conf: ${(wMeta.confidence * 100).toFixed(1)}% (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) — Click to play`
                     : 'Click to play'
                 }
                 className={`inline-block cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-100 ${
@@ -318,7 +418,9 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                 onClick={() => handleWordClick(idx)}
                 title={
                   wMeta
-                    ? `Confidence: ${(wMeta.confidence * 100).toFixed(1)}% (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s)${wMeta.flagged ? ' [Flagged]' : ''}`
+                    ? isRemoteAudio
+                      ? `Segment: ${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s`
+                      : `Confidence: ${(wMeta.confidence * 100).toFixed(1)}% (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s)${wMeta.flagged ? ' [Flagged]' : ''}`
                     : undefined
                 }
                 className={`inline-flex items-center gap-1 cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-100 ${
@@ -334,7 +436,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
                     ? renderHighlightedToken(phonWord, phoneticRegex)
                     : phonWord}
                 </span>
-                {isMatched && wMeta && (
+                {isMatched && wMeta && !isRemoteAudio && (
                   <span className="text-[10px] opacity-80 font-sans">
                     {(wMeta.confidence * 100).toFixed(0)}%
                   </span>
@@ -370,21 +472,68 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
         </button>
 
         <div className="flex-1 min-w-0">
-          <div
-            ref={waveformContainerRef}
-            className={`w-full ${isReady ? 'block' : 'hidden'}`}
-          />
-          {!isReady && (
+          {isRemoteAudio ? (
             <div
-              onClick={() => ensureWaveSurferAndPlay()}
-              className="h-9 flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 cursor-pointer select-none"
+              onClick={e => {
+                if (segmentDuration <= 0) {
+                  ensureWaveSurferAndPlay();
+                  return;
+                }
+                const rect = e.currentTarget.getBoundingClientRect();
+                const ratio = Math.max(
+                  0,
+                  Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
+                );
+                ensureWaveSurferAndPlay(segmentStart + ratio * segmentDuration);
+              }}
+              className="h-9 flex flex-col justify-center gap-1.5 cursor-pointer select-none"
+              title="Click to play or seek within remote interview segment"
             >
-              <Volume2 className="w-4 h-4 text-sky-400/70" />
-              <span>
-                Click Play or any Cherokee word above to load waveform & listen (
-                {phrase.audio_end.toFixed(2)}s)
-              </span>
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span className="inline-flex items-center gap-1.5">
+                  <Volume2 className="w-3.5 h-3.5 text-sky-400/80" />
+                  <span>
+                    {isReady
+                      ? 'Streaming remote segment audio'
+                      : `Click Play to stream segment (${segmentDuration.toFixed(2)}s)`}
+                  </span>
+                </span>
+                <span className="font-mono text-[11px] text-slate-500">
+                  {segmentStart.toFixed(1)}s – {segmentEnd.toFixed(1)}s
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-sky-400 transition-all duration-100"
+                  style={{
+                    width: `${
+                      segmentDuration > 0
+                        ? Math.min(100, (currentTime / segmentDuration) * 100)
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
             </div>
+          ) : (
+            <>
+              <div
+                ref={waveformContainerRef}
+                className={`w-full ${isReady ? 'block' : 'hidden'}`}
+              />
+              {!isReady && (
+                <div
+                  onClick={() => ensureWaveSurferAndPlay()}
+                  className="h-9 flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 cursor-pointer select-none"
+                >
+                  <Volume2 className="w-4 h-4 text-sky-400/70" />
+                  <span>
+                    Click Play or any Cherokee word above to load waveform & listen (
+                    {segmentDuration.toFixed(2)}s)
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
 

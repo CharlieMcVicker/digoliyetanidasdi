@@ -1,0 +1,21 @@
+id,phenomenon,description,syllabary_token,kiwa_transliteration,naive_tth,proposed_tth,your_tth,context_text,context_translation
+1,internal_comma,"Internal comma (,) between syllabary characters (syncope / drop vowel)","ᎤᎵ,ᏍᏔᏂᏙᎴ","uli,stanidole",ulihsthanitole,ulsthanitole,,"‘Ꮩ ᎤᎵ,ᏍᏔᏂᏙᎴ ‘truck’Ꭲ ᏥᏣ,ᏐᏁ?",What happened when the truck hit you?
+2,multiple_internal_commas,"Multiple internal commas (,) in one word","ᏚᎵ,ᏍᏆᎵ,Ꮢ","duli,squali,sv",tulihskwalihsv,tulskwalsv,,"ᏥᏐᎯ ᏚᎵ,ᏍᏆᎵ,Ꮢ ᎣᏂ ᏗᏢ",My back was broken.
+3,word_final_comma,"Word-final comma (,) attached to syllabary (apocope / drop final vowel vs clause comma)","ᎠᏂᏲᏁᎦ,","aniyonega,",aniyoneka,aniyonek,,"ᎯᎾ ᏥᏓ’Ꭲ, ᎠᏂᏲᏁᎦ, ‘marry’ Ꮩ ᎤᏍᏗ ᏴᏓ, ᏣᎳᎩ, ᎬᏗ,?",What was the Cherokee word for marry?
+4,comma_before_question_mark,"Word-final comma followed by question mark (,?)","ᎬᏗ,?","gvdi,?",kvti,kvt,,"ᎯᎾ ᏥᏓ’Ꭲ, ᎠᏂᏲᏁᎦ, ‘marry’ Ꮩ ᎤᏍᏗ ᏴᏓ, ᏣᎳᎩ, ᎬᏗ,?",What was the Cherokee word for marry?
+5,internal_semicolon,"Internal semicolon (;) between syllabary characters (drop vowel and add h)",ᎤᏥ;ᏈᏗ,utsi;quidi,utshikwiti,utshkwiti,,ᎤᏥ;ᏈᏗ ᏥᎨᎲ,(example of internal semicolon)
+6,internal_semicolon_sonorant,"Internal semicolon (;) after sonorant syllable (e.g. Ꮅ; -> drop i and add h -> lh)",ᏧᎾᏁᎵ;ᏙᏗ,tsunaneli;dodi,tshunanelitoti,tshunanelhtoti,,ᏧᎾᏁᎵ;ᏙᏗ,for them to play / try
+7,word_final_semicolon,"Word-final semicolon (;) after syllabary character",ᏂᏛᎩᎶᏒ;,nidvgilosv;,nitvkilohsv,nitvkilohs,,ᏂᏛᎩᎶᏒ;,where I came from
+8,internal_period,"Internal period (.) between syllabary characters (pre-aspiration / coda h without dropping vowel)",ᏣᏛ.ᏏᏙᎸ,tsadv.sidolv,tsatvsitolv,tsathvsitolv,,"ᎡᏍᎦᏂ, ᏣᏛ.ᏏᏙᎸ?",Were you raised around here?
+9,internal_comma_and_period,"Combined internal comma (,) and internal period (.) in same word","ᎠᏩ,Ꮫ.ᏓᏍᏗ","awa,dv.dasdi",awatvtahsti,awtvhtahsti,,"ᎠᏩ,Ꮫ.ᏓᏍᏗ",to ask / listen
+10,internal_colon,"Internal colon (:) between syllabary characters (long vowel -> drop colon)",ᎪᎱ:ᏍᏗ,gohu:sdi,kohuhsti,kohuhsti,,ᎪᎱ:ᏍᏗ,something
+11,internal_apostrophe_clitic,"Internal apostrophe/quote (’ or ') before vowel/clitic (glottal stop or contraction)",ᏧᎾᏕᎶᏆᏍᏗ’Ꭱ,tsunadeloquasdi’e,tshunatelokwahsti'e,tshunatelokwahsti'e,,ᎠᏭ ᏧᎾᏕᎶᏆᏍᏗ’Ꭱ ᏓᏩᏕᎶᏆᎥ,I went to school right here.
+12,internal_apostrophe_consonant,"Internal apostrophe/quote (’ or ') before consonant syllable (e.g. ᎤᏨᏘᏅ’Ꮲ)",ᎤᏨᏘᏅ’Ꮲ,utsvtinv’tlv,utsvthinv'tlhv,utsvthinv'tlhv,,Ꮭ ᎮᎾ ᎤᏨᏘᏅ’Ꮲ ᏂᏗᏣᏓᎴᏅᎮ ᎠᎭᏂᏭ ᎯᎠ?,Y’all moved from somewhere else?
+13,leading_apostrophe_apheresis,"Word-initial apostrophe (‘ or ’) marking apheresis/dropped initial syllable (e.g. ‘Ꮩ for ᎦᏙ)",‘Ꮩ,‘do,to,to,,"‘Ꮩ ᏕᏣᏙᎠ, ᏳᏁᎦ ᎬᏗ?",What is your English name?
+14,trailing_apostrophe,"Word-final apostrophe (’) marking dropped final syllable/glottal",Ꮩ’,do’,to',to',,ᏓᏤᏞ’Ꭱ Ꮩ’...Ᏺ’,I’m not sure...
+15,internal_single_hyphen,"Internal single hyphen (-) between syllabary characters (stutter/repair or spelled-out)",Ꮷ-ᏧᎶᏒ,tsu-tsulosv,tshutshulohsv,tshutshulohsv,,Ꮷ-ᏧᎶᏒ,when they passed
+16,internal_double_hyphen,"Internal double hyphen (--) joining two words/repairs without space",ᎠᏂᏗᎰ--ᎠᏂᏕᎮ,anidiho--anidehe,anitihoanitehe,anitiho anitehe,,ᎠᏂᏗᎰ--ᎠᏂᏕᎮ,they say -- they used to say
+17,internal_ellipsis,"Internal ellipsis (... or …) joining two words without space","ᏥᏄᎵ,ᏍᏔᏅ...ᏥᏐᎯ","tsinuli,stanv...tsisohi",tshinulihsthanvtshisohi,tshinulsthanv tshisohi,,"ᏥᏄᎵ,ᏍᏔᏅ...ᏥᏐᎯ ᏚᎵ,ᏍᏆᎵ,Ꮢ ᎣᏂ ᏗᏢ",Since it happened... my back was broken.
+18,internal_exclamation,"Internal exclamation mark (!) between syllabary characters","Ꭺ!ᏍᏗ,","go!sdi,",kohsti,kohst,,"Ꭺ!ᏍᏗ,",something
+19,parenthetical_or_bracketed_syllable,"Parenthetical or bracketed syllable inside word (e.g. ᏥᏛ(Ꭹ)ᏓᏁᎸ or Ᏻ[ᏓᎵ,])",ᏥᏛ(Ꭹ)ᏓᏁᎸ,tsidv(gi)danelv,tshitvkitanelv,tshitvkitanelv,,ᏥᏛ(Ꭹ)ᏓᏁᎸ,(transcriber supplied/uncertain syllable)
+20,compound_clitic,"English stem + Cherokee syllabary clitic (with or without quotes/hyphen/asterisk)",‘truck’Ꭲ,‘truck’i,truck'i,truck'i,,"‘Ꮩ ᎤᎵ,ᏍᏔᏂᏙᎴ ‘truck’Ꭲ ᏥᏣ,ᏐᏁ?",What happened when the truck hit you?
