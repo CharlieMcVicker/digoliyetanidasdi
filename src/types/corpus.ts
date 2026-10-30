@@ -20,6 +20,15 @@ export interface PhraseRecord {
   source_id: string;
   loc_label: string;
   loc_index: number;
+  turn_id?: string;
+  phrase_index?: number;
+  turn_phrase_count?: number;
+  speaker_label?: string;
+  turn_audio_path?: string | null;
+  turn_start_sec?: number;
+  turn_end_sec?: number;
+  global_start_sec?: number;
+  global_end_sec?: number;
   phonetic_text: string;
   phonetic_broad: string;
   syllabary_text: string;
@@ -68,3 +77,42 @@ export interface GroupedSearchResult {
   matches: ScoredPhraseMatch[];
   topConfidence: number;
 }
+
+export interface TurnContainerModel {
+  turnId: string;
+  turnIndex: number;
+  speakerLabel: string;
+  englishText: string | null;
+  turnAudioPath: string | null;
+  turnStartSec: number;
+  turnEndSec: number;
+  phrases: PhraseRecord[];
+  isTargetTurn: boolean;
+}
+
+export interface BibleContextWindow {
+  kind: 'biblical_chapter';
+  source: DocumentMeta;
+  targetPhrase: PhraseRecord;
+  verses: PhraseRecord[];
+  totalVerses: number;
+  startIndex: number;
+  endIndex: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}
+
+export interface InterviewContextWindow {
+  kind: 'marked_syllabary_corpus';
+  source: DocumentMeta;
+  targetPhrase: PhraseRecord;
+  targetTurnId: string;
+  turns: TurnContainerModel[];
+  totalTurns: number;
+  startTurnIndex: number;
+  endTurnIndex: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+}
+
+export type OrderedSourceContextWindow = BibleContextWindow | InterviewContextWindow;

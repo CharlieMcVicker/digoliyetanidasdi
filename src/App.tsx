@@ -6,8 +6,9 @@ import {
   CornerDownLeft,
   Eye,
   EyeOff,
-  Filter,
   Gauge,
+  HelpCircle,
+  Info,
   Languages,
   Layers,
   Search,
@@ -18,18 +19,19 @@ import {
 import type {
   DocumentMeta,
   PhraseRecord,
+  ScoredPhraseMatch,
   SearchMode,
   SortOption,
   SourceType,
 } from './types/corpus';
 import {
+  buildTurnPartCountsMap,
   createCorpusIndexes,
-  normalizeDGQueryToTTH,
-  normalizeTTHQuery,
+  flattenAndSortMatches,
   searchCorpus,
-  toBroadTTH,
 } from './lib/search';
 import { PhraseCard } from './components/PhraseCard';
+import { ContextDetailPane } from './components/ContextDetailPane';
 
 const EXAMPLE_QUERIES: Array<{
   label: string;
@@ -41,49 +43,49 @@ const EXAMPLE_QUERIES: Array<{
     label: 'anichuja',
     query: 'anichuja',
     mode: 'dg',
-    description: 'D/G → "anitshutsa" (boys)',
+    description: '"boys" — Standard (d/t) spelling',
   },
   {
     label: 'adalenisgv',
     query: 'adalenisgv',
     mode: 'dg',
-    description: 'D/G → "atalenihskv" (in the beginning)',
+    description: '"in the beginning" — Standard (d/t) spelling',
   },
   {
     label: 'sgwà:hle̋:sdi',
     query: 'sgwà:hle̋:sdi',
     mode: 'dg',
-    description: 'Feeling D/G with tones & colons (ball)',
+    description: '"ball" — Dictionary spelling with tone marks',
   },
   {
     label: 'anitshutsa',
     query: 'anitshutsa',
     mode: 'tth',
-    description: 'Strict T/TH match',
+    description: '"boys" — Linguistic (t/th) spelling',
   },
   {
     label: 'anitsutsa',
     query: 'anitsutsa',
     mode: 'tth',
-    description: 'Broad T/TH fallback (without h)',
+    description: '"boys" — Relaxed spelling (without h)',
   },
   {
     label: 'tshutsa tananelo',
     query: 'tshutsa tananelo',
     mode: 'tth',
-    description: 'Multi-word infix search',
+    description: '"boys playing" — Multi-word search',
   },
   {
     label: 'playing ball',
     query: 'playing ball',
     mode: 'english',
-    description: 'English gloss search',
+    description: 'Search by English meaning',
   },
   {
     label: 'roosters',
     query: 'roosters',
     mode: 'english',
-    description: 'English keyword search',
+    description: 'Search by English word',
   },
 ];
 
@@ -113,14 +115,20 @@ export const App: React.FC = () => {
   const [committedQuery, setCommittedQuery] = useState('');
   const [committedMode, setCommittedMode] = useState<SearchMode>('dg');
 
-  // Sorting & Filtering
+  // Sorting, Grouping & Filtering
   const [sortBy, setSortBy] = useState<SortOption>('matched_confidence');
+  const [groupBySource, setGroupBySource] = useState(true);
+  const [userDisabledGroupingInNormalSort, setUserDisabledGroupingInNormalSort] =
+    useState(false);
   const [showLowConfidence, setShowLowConfidence] = useState(false);
   const [hideAnomalies, setHideAnomalies] = useState(false);
   const [selectedSourceType, setSelectedSourceType] = useState<'all' | SourceType>('all');
   const [selectedSourceId, setSelectedSourceId] = useState<string>('all');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [activeAudioPhraseId, setActiveAudioPhraseId] = useState<string | null>(null);
+  const [contextPhrase, setContextPhrase] = useState<PhraseRecord | null>(null);
+  const [showTerminology, setShowTerminology] = useState(false);
+  const [showUnderTheHood, setShowUnderTheHood] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,7 +187,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const { indexes, phrasesMap, sourcesMap, corpusStats } = useMemo(() => {
+  const { indexes, phrasesMap, sourcesMap, turnPartCountsMap, corpusStats } = useMemo(() => {
     const pMap = new Map<string, PhraseRecord>();
     let totalDuration = 0;
     let totalConf = 0;
@@ -205,11 +213,13 @@ export const App: React.FC = () => {
     }
 
     const idxs = createCorpusIndexes(phrases);
+    const tPartsMap = buildTurnPartCountsMap(phrases);
 
     return {
       indexes: idxs,
       phrasesMap: pMap,
       sourcesMap: sMap,
+      turnPartCountsMap: tPartsMap,
       corpusStats: {
         totalPhrases: phrases.length,
         totalSources: sources.length,
@@ -270,6 +280,44 @@ export const App: React.FC = () => {
     [groupedResults]
   );
 
+  const flatResults = useMemo(
+    () => flattenAndSortMatches(groupedResults, sortBy, sourcesMap),
+    [groupedResults, sortBy, sourcesMap]
+  );
+
+  const scoredMatchesMap = useMemo(() => {
+    const m = new Map<string, ScoredPhraseMatch>();
+    for (const g of groupedResults) {
+      for (const match of g.matches) {
+        m.set(match.id, match);
+      }
+    }
+    return m;
+  }, [groupedResults]);
+
+  const handleSortChange = (nextSort: SortOption) => {
+    const prevSort = sortBy;
+    setSortBy(nextSort);
+    if (nextSort === 'shortest_sentence') {
+      setGroupBySource(false);
+    } else if (prevSort === 'shortest_sentence') {
+      if (!userDisabledGroupingInNormalSort) {
+        setGroupBySource(true);
+      }
+    }
+  };
+
+  const handleGroupBySourceChange = (checked: boolean) => {
+    setGroupBySource(checked);
+    if (sortBy !== 'shortest_sentence') {
+      setUserDisabledGroupingInNormalSort(!checked);
+    }
+  };
+
+  const contextSource = contextPhrase
+    ? sourcesMap.get(contextPhrase.source_id)
+    : undefined;
+
   const handleDgChange = (val: string) => {
     setActiveMode('dg');
     setDgInput(val);
@@ -313,81 +361,74 @@ export const App: React.FC = () => {
     }));
   };
 
-  const previewSourceQuery = currentRawQuery.trim() || committedQuery.trim();
-  const previewSourceMode = currentRawQuery.trim() ? activeMode : committedMode;
-
-  const normalizedPreview = useMemo(() => {
-    if (!previewSourceQuery || previewSourceMode === 'english') return null;
-    const strict =
-      previewSourceMode === 'dg'
-        ? normalizeDGQueryToTTH(previewSourceQuery)
-        : normalizeTTHQuery(previewSourceQuery);
-    const broad = toBroadTTH(strict);
-    return { strict, broad };
-  }, [previewSourceQuery, previewSourceMode]);
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Sticky Top Header */}
-      <header className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 shadow-xl">
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/40 flex items-center justify-center text-sky-400 font-bold text-xl">
+              <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-700 font-bold text-xl shadow-2xs">
                 Ꭰ
               </div>
               <div>
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
                   Digoliyetanidasdi
-                  <span className="text-xs font-mono font-normal px-2 py-0.5 rounded bg-slate-800 text-sky-300 border border-slate-700">
-                    CTC Phonetic Corpus
-                  </span>
                 </h1>
-                <p className="text-xs text-slate-400">
-                  Cherokee Phonetic & Audio Alignment Search • Pre-Bible CTC Forced Alignment
+                <p className="text-xs text-slate-500">
+                  Search Spoken Cherokee Recordings & Translations
                 </p>
               </div>
             </div>
 
-            {!loading && (
-              <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-slate-400">
-                <span className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800">
-                  Phrases: <strong className="text-slate-200">{corpusStats.totalPhrases.toLocaleString()}</strong>
-                </span>
-                <span className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800">
-                  Sources: <strong className="text-slate-200">{corpusStats.totalSources}</strong>
-                </span>
-                <span className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800">
-                  Mean Conf: <strong className="text-emerald-400">{corpusStats.meanConfidence}%</strong>
-                </span>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowTerminology(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-2xs transition cursor-pointer"
+                title="Learn how Cherokee spelling search and audio word highlighting work"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-sky-600" />
+                <span>How It Works</span>
+              </button>
+
+              {!loading && (
+                <>
+                  <span className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-600 shadow-2xs">
+                    Recordings: <strong className="text-slate-900">{corpusStats.totalPhrases.toLocaleString()}</strong>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-600 shadow-2xs">
+                    Sources: <strong className="text-slate-900">{corpusStats.totalSources}</strong>
+                  </span>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Three Exclusive Search Boxes */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* Box 1: D/G Phonetics */}
+            {/* Box 1: Standard (d/t) */}
             <div
               className={`rounded-xl border p-2.5 transition-all ${
                 activeMode === 'dg' && dgInput
-                  ? 'bg-slate-900 border-sky-500 ring-2 ring-sky-500/20'
-                  : 'bg-slate-900/60 border-slate-800 focus-within:border-sky-500/60'
+                  ? 'bg-white border-sky-500 ring-2 ring-sky-500/15 shadow-sm'
+                  : 'bg-slate-100/70 border-slate-200 focus-within:bg-white focus-within:border-sky-500/60 shadow-2xs'
               }`}
             >
               <label
                 htmlFor="search-dg"
-                className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5"
+                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span className="flex items-center gap-1.5">
-                  <Languages className="w-3.5 h-3.5 text-sky-400" />
-                  1. D/G Phonetics
+                  <Languages className="w-3.5 h-3.5 text-sky-600" />
+                  1. Standard Spelling (d/t)
                 </span>
-                <span className="text-[11px] font-mono text-slate-500">
-                  d→t, g→k, ch→tsh
+                <span className="text-[11px] font-normal text-slate-500">
+                  Community & Dictionary
                 </span>
               </label>
               <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-slate-500 absolute left-2.5 pointer-events-none" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 pointer-events-none" />
                 <input
                   id="search-dg"
                   type="text"
@@ -396,13 +437,13 @@ export const App: React.FC = () => {
                   onChange={e => handleDgChange(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g. anichuja, adalenisgv..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
                 />
                 {dgInput && (
                   <button
                     type="button"
                     onClick={clearAllInputs}
-                    className="absolute right-2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -410,28 +451,28 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Box 2: T/TH Phonetics */}
+            {/* Box 2: Linguistic (t/th) */}
             <div
               className={`rounded-xl border p-2.5 transition-all ${
                 activeMode === 'tth' && tthInput
-                  ? 'bg-slate-900 border-sky-500 ring-2 ring-sky-500/20'
-                  : 'bg-slate-900/60 border-slate-800 focus-within:border-sky-500/60'
+                  ? 'bg-white border-sky-500 ring-2 ring-sky-500/15 shadow-sm'
+                  : 'bg-slate-100/70 border-slate-200 focus-within:bg-white focus-within:border-sky-500/60 shadow-2xs'
               }`}
             >
               <label
                 htmlFor="search-tth"
-                className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5"
+                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span className="flex items-center gap-1.5">
-                  <Volume2 className="w-3.5 h-3.5 text-violet-400" />
-                  2. T/TH Phonetics
+                  <Volume2 className="w-3.5 h-3.5 text-violet-600" />
+                  2. Linguistic Spelling (t/th)
                 </span>
-                <span className="text-[11px] font-mono text-slate-500">
-                  Direct T/TH + Broad
+                <span className="text-[11px] font-normal text-slate-500">
+                  Aspirated Sounds
                 </span>
               </label>
               <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-slate-500 absolute left-2.5 pointer-events-none" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 pointer-events-none" />
                 <input
                   id="search-tth"
                   type="text"
@@ -440,13 +481,13 @@ export const App: React.FC = () => {
                   onChange={e => handleTthChange(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g. anitshutsa, atalenihskv..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
                 />
                 {tthInput && (
                   <button
                     type="button"
                     onClick={clearAllInputs}
-                    className="absolute right-2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -454,28 +495,28 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Box 3: English Translation */}
+            {/* Box 3: English Meaning */}
             <div
               className={`rounded-xl border p-2.5 transition-all ${
                 activeMode === 'english' && englishInput
-                  ? 'bg-slate-900 border-sky-500 ring-2 ring-sky-500/20'
-                  : 'bg-slate-900/60 border-slate-800 focus-within:border-sky-500/60'
+                  ? 'bg-white border-sky-500 ring-2 ring-sky-500/15 shadow-sm'
+                  : 'bg-slate-100/70 border-slate-200 focus-within:bg-white focus-within:border-sky-500/60 shadow-2xs'
               }`}
             >
               <label
                 htmlFor="search-english"
-                className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5"
+                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
               >
                 <span className="flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5 text-teal-400" />
-                  3. English Translation
+                  <BookOpen className="w-3.5 h-3.5 text-teal-600" />
+                  3. English Meaning
                 </span>
-                <span className="text-[11px] font-mono text-slate-500">
-                  Prefix + Fuzzy
+                <span className="text-[11px] font-normal text-slate-500">
+                  Word or Phrase
                 </span>
               </label>
               <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-slate-500 absolute left-2.5 pointer-events-none" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 pointer-events-none" />
                 <input
                   id="search-english"
                   type="text"
@@ -484,13 +525,13 @@ export const App: React.FC = () => {
                   onChange={e => handleEnglishChange(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g. playing ball, roosters..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-7 py-1.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
                 />
                 {englishInput && (
                   <button
                     type="button"
                     onClick={clearAllInputs}
-                    className="absolute right-2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -499,52 +540,39 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Search Action + Source & Confidence Filter Bar */}
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex flex-col gap-2.5 text-xs">
+          {/* Search Action + Source & Quality Filter Bar */}
+          <div className="mt-3 pt-3 border-t border-slate-200 flex flex-col gap-2.5 text-xs">
             {/* Row 1: Search Trigger, Source Collection Pills & Specific Source Dropdown */}
             <div className="flex flex-wrap items-center justify-between gap-2.5">
-              {/* Left: Search / Update Search Button + Normalization Preview */}
+              {/* Left: Search / Update Search Button */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={executeSearch}
                   disabled={!currentRawQuery.trim() && !committedQuery.trim()}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold text-xs transition cursor-pointer shadow-sm ${
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold text-xs transition cursor-pointer shadow-xs ${
                     isDirty && currentRawQuery.trim()
-                      ? 'bg-sky-500 hover:bg-sky-400 text-slate-950 ring-2 ring-sky-400/40 animate-pulse'
+                      ? 'bg-sky-600 hover:bg-sky-500 text-white ring-2 ring-sky-400/40 animate-pulse'
                       : currentRawQuery.trim()
-                        ? 'bg-sky-600/90 hover:bg-sky-500 text-white'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                        ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                        : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                   }`}
                 >
                   <Search className="w-3.5 h-3.5" />
                   {isDirty && committedQuery
                     ? 'Update Search'
-                    : isDirty && currentRawQuery.trim()
-                      ? 'Search'
-                      : 'Search'}
-                  <span className="inline-flex items-center gap-0.5 text-[10px] opacity-80 font-mono ml-0.5 px-1 py-0.2 rounded bg-black/20">
+                    : 'Search'}
+                  <span className="inline-flex items-center gap-0.5 text-[10px] opacity-90 font-mono ml-0.5 px-1 py-0.2 rounded bg-black/15">
                     <CornerDownLeft className="w-2.5 h-2.5" />
                     Enter
                   </span>
                 </button>
-
-                {normalizedPreview && (
-                  <div className="flex flex-wrap items-center gap-1.5 font-mono">
-                    <span className="px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/30">
-                      Strict T/TH: <strong>{normalizedPreview.strict}</strong>
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/30">
-                      Broad: <strong>{normalizedPreview.broad}</strong>
-                    </span>
-                  </div>
-                )}
               </div>
 
               {/* Right: Source Collection Pills & Specific Source Dropdown */}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
-                  <Layers className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-0.5 hidden sm:inline" />
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                  <Layers className="w-3.5 h-3.5 text-slate-500 ml-1.5 mr-0.5 hidden sm:inline" />
                   {SOURCE_TYPE_OPTIONS.map(opt => {
                     const active = selectedSourceType === opt.value;
                     return (
@@ -554,8 +582,8 @@ export const App: React.FC = () => {
                         onClick={() => handleSourceTypeChange(opt.value)}
                         className={`px-2 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
                           active
-                            ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                            : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                            ? 'bg-white text-sky-700 shadow-2xs border border-slate-200 font-semibold'
+                            : 'text-slate-600 hover:text-slate-900 border border-transparent'
                         }`}
                       >
                         {opt.label}
@@ -568,7 +596,7 @@ export const App: React.FC = () => {
                   aria-label="Filter by specific source"
                   value={selectedSourceId}
                   onChange={e => setSelectedSourceId(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-sky-500 max-w-[230px] truncate"
+                  className="bg-white border border-slate-300 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-sky-500 max-w-[230px] truncate shadow-2xs"
                 >
                   <option value="all">
                     All Sources ({availableSources.length})
@@ -582,18 +610,18 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 2: Match Status, Confidence <5% Toggle, Anomaly Toggle & Sort */}
+            {/* Row 2: Match Status, Include Uncertain Matches Toggle & Sort */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <div className="flex flex-wrap items-center gap-2">
                 {committedQuery.trim() ? (
-                  <span className="text-slate-400">
-                    Showing <strong className="text-white">{totalMatches}</strong>{' '}
-                    {totalMatches === 1 ? 'phrase' : 'phrases'} across{' '}
-                    <strong className="text-white">{groupedResults.length}</strong>{' '}
+                  <span className="text-slate-600">
+                    Showing <strong className="text-slate-900">{totalMatches}</strong>{' '}
+                    {totalMatches === 1 ? 'recording' : 'recordings'} across{' '}
+                    <strong className="text-slate-900">{groupedResults.length}</strong>{' '}
                     {groupedResults.length === 1 ? 'source' : 'sources'} for{' '}
-                    <span className="font-mono text-sky-300">"{committedQuery}"</span>
+                    <span className="font-mono text-sky-700 font-semibold">"{committedQuery}"</span>
                     {isDirty && currentRawQuery.trim() && (
-                      <span className="ml-2 text-amber-300 font-medium">
+                      <span className="ml-2 text-amber-700 font-medium">
                         • Press Enter or click "Update Search" for "{currentRawQuery.trim()}"
                       </span>
                     )}
@@ -602,75 +630,76 @@ export const App: React.FC = () => {
                   <span className="text-slate-500">
                     {currentRawQuery.trim()
                       ? 'Press Enter or click Search to run query.'
-                      : 'Type a query and press Enter or click Search.'}
+                      : 'Word timings are computer-generated and may occasionally be off.'}
                   </span>
                 )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {/* Toggle <5% confidence phrases and words */}
+                {/* Single toggle for uncertain / noisy matches */}
                 <button
                   type="button"
-                  onClick={() => setShowLowConfidence(prev => !prev)}
+                  onClick={() => {
+                    setShowLowConfidence(prev => !prev);
+                    setHideAnomalies(false);
+                  }}
                   title={
                     showLowConfidence
-                      ? 'Currently showing phrases and word matches with <5% confidence. Click to hide them.'
-                      : 'Phrases and word matches with <5% alignment confidence are hidden by default. Click to reveal them.'
+                      ? 'Currently including recordings where computer word-timing is very uncertain (<5% confidence). Click to hide them.'
+                      : 'Recordings where computer word-timing is very uncertain (<5% confidence) are hidden by default. Click to include them.'
                   }
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition ${
                     showLowConfidence
-                      ? 'bg-amber-500/20 text-amber-200 border-amber-500/50'
-                      : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   {showLowConfidence ? (
                     <>
-                      <Eye className="w-3.5 h-3.5 text-amber-300" />
-                      Showing &lt;5% Confidence
+                      <Eye className="w-3.5 h-3.5 text-amber-600" />
+                      Including uncertain matches
                     </>
                   ) : (
                     <>
                       <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                      &lt;5% Confidence Hidden (Reveal)
+                      Include uncertain matches
                     </>
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setHideAnomalies(prev => !prev)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition ${
-                    hideAnomalies
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                      : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-200'
-                  }`}
-                >
-                  <Filter className="w-3.5 h-3.5" />
-                  {hideAnomalies ? 'Hiding Flagged Anomalies' : 'Hide Flagged'}
-                </button>
+                  <div className="flex items-center gap-1.5">
+                    <Gauge className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-slate-500">Sort:</span>
+                    <select
+                      aria-label="Sort results"
+                      value={sortBy}
+                      onChange={e => handleSortChange(e.target.value as SortOption)}
+                      className="bg-white border border-slate-300 text-slate-800 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-sky-500 shadow-2xs"
+                    >
+                      <option value="matched_confidence">
+                        Best Audio Match
+                      </option>
+                      <option value="phrase_confidence">
+                        Clearest Recording
+                      </option>
+                      <option value="shortest_sentence">
+                        Shortest Phrase
+                      </option>
+                      <option value="canonical">
+                        Book / Interview Order
+                      </option>
+                    </select>
+                  </div>
 
-                <div className="flex items-center gap-1.5">
-                  <Gauge className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-slate-400">Sort:</span>
-                  <select
-                    value={sortBy}
-                    onChange={e => setSortBy(e.target.value as SortOption)}
-                    className="bg-slate-900 border border-slate-700 text-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-sky-500"
-                  >
-                    <option value="matched_confidence">
-                      Matched Word Confidence (High → Low)
-                    </option>
-                    <option value="phrase_confidence">
-                      Phrase Mean Confidence (High → Low)
-                    </option>
-                    <option value="shortest_sentence">
-                      Shortest Sentence (Fewest Words → Most)
-                    </option>
-                    <option value="canonical">
-                      Canonical Source & Verse Order
-                    </option>
-                  </select>
-                </div>
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer select-none shadow-2xs transition">
+                    <input
+                      type="checkbox"
+                      checked={groupBySource}
+                      onChange={e => handleGroupBySourceChange(e.target.checked)}
+                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    />
+                    <span>Group by source</span>
+                  </label>
               </div>
             </div>
           </div>
@@ -680,75 +709,80 @@ export const App: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
         {loading && (
-          <div className="text-center py-20 text-slate-400">
-            <div className="inline-block w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mb-3" />
-            <p className="text-sm font-mono">
-              Loading Cherokee phonetic corpus & building 3-gram indexes...
+          <div className="text-center py-20 text-slate-500">
+            <div className="inline-block w-8 h-8 border-2 border-sky-600 border-t-transparent rounded-full animate-spin mb-3" />
+            <p className="text-sm">
+              Loading Cherokee audio recordings and search index...
             </p>
           </div>
         )}
 
         {error && (
-          <div className="bg-rose-950/50 border border-rose-500/40 rounded-xl p-6 text-rose-200 text-center">
-            <p className="font-semibold mb-1">Failed to load corpus</p>
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 text-rose-800 text-center">
+            <p className="font-semibold mb-1">Failed to load recordings</p>
             <p className="text-sm opacity-80">{error}</p>
           </div>
         )}
 
         {/* Empty State Dashboard */}
         {!loading && !error && !committedQuery.trim() && (
-          <div className="max-w-3xl mx-auto my-8 bg-slate-900/50 border border-slate-800/90 rounded-2xl p-6 sm:p-8 shadow-xl">
-            <div className="flex items-center gap-2 text-sky-400 text-xs font-mono uppercase tracking-wider mb-2">
+          <div className="max-w-3xl mx-auto my-8 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs">
+            <div className="flex items-center gap-2 text-sky-700 text-xs font-semibold uppercase tracking-wider mb-2">
               <Sparkles className="w-4 h-4" />
               Ready to Search
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
-              Explore Spoken Cherokee Phonetics & Forced Audio Alignments
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+              Listen to Spoken Cherokee Words & Sentences
             </h2>
-            <p className="text-sm text-slate-400 leading-relaxed mb-6">
-              Type in any of the three boxes above and press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 font-mono text-xs border border-slate-700">Enter</kbd> (or click <strong>Search</strong>) to search across{' '}
-              <strong className="text-slate-200">
+            <p className="text-sm text-slate-600 leading-relaxed mb-4">
+              Type a word or phrase in any of the three boxes above and press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-xs border border-slate-200">Enter</kbd> (or click <strong>Search</strong>) to hear{' '}
+              <strong className="text-slate-900">
                 {corpusStats.totalPhrases.toLocaleString()}
               </strong>{' '}
-              utterances ({corpusStats.totalHours} hours of audio) from the{' '}
-              <strong className="text-slate-200">
+              spoken recordings ({corpusStats.totalHours} hours of audio) from the{' '}
+              <strong className="text-slate-900">
                 1975 Durbin Feeling Cherokee Dictionary
               </strong>
               , the{' '}
-              <strong className="text-slate-200">Cherokee New Testament</strong>, and{' '}
-              <strong className="text-slate-200">Saving the Voices</strong>.
-              Matches are ranked and color-coded by CTC acoustic alignment confidence, with &lt;5% confidence phrases and words hidden by default.
+              <strong className="text-slate-900">Cherokee New Testament</strong>, and{' '}
+              <strong className="text-slate-900">Saving the Voices</strong> elder interviews.
+            </p>
+            <p className="text-xs text-slate-500 leading-relaxed mb-6 flex items-start gap-2 bg-slate-50 border border-slate-200/80 rounded-lg p-3">
+              <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>Note on word timing:</strong> Word-by-word audio timestamps are computer-generated so you can click any word to hear it spoken. Because natural conversation is fast and expressive, the computer alignment can occasionally be slightly off. Hover over any word or badge to view its exact confidence score.
+              </span>
             </p>
 
-            {/* Confidence Color Legend */}
+            {/* Match Quality Color Legend */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-6 text-xs">
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
                 <div>
-                  <div className="font-semibold">High Confidence (≥ 80%)</div>
-                  <div className="text-[11px] opacity-80">Clean acoustic alignment</div>
+                  <div className="font-semibold">Clear Match</div>
+                  <div className="text-[11px] text-emerald-700">Crisp audio & word timing</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
                 <div>
-                  <div className="font-semibold">Medium Confidence (10–79%)</div>
-                  <div className="text-[11px] opacity-80">Rapid speech / vowel drop</div>
+                  <div className="font-semibold">Approximate Match</div>
+                  <div className="text-[11px] text-amber-700">Fast conversational speech</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-400 shrink-0" />
+              <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
                 <div>
-                  <div className="font-semibold">Low / Flagged (&lt; 10%)</div>
-                  <div className="text-[11px] opacity-80">&lt;5% hidden by default</div>
+                  <div className="font-semibold">Uncertain Timing</div>
+                  <div className="text-[11px] text-rose-700">Timing may be slightly off</div>
                 </div>
               </div>
             </div>
 
             {/* Clickable Example Chips */}
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
-                Try an Example Query:
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
+                Try an Example Search:
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {EXAMPLE_QUERIES.map(ex => (
@@ -756,22 +790,22 @@ export const App: React.FC = () => {
                     key={`${ex.mode}-${ex.label}`}
                     type="button"
                     onClick={() => applyExample(ex)}
-                    className="flex items-center justify-between text-left p-3 rounded-xl bg-slate-950/80 hover:bg-slate-800/80 border border-slate-800 hover:border-sky-500/40 transition cursor-pointer group"
+                    className="flex items-center justify-between text-left p-3 rounded-xl bg-slate-50 hover:bg-sky-50/70 border border-slate-200 hover:border-sky-300 transition cursor-pointer group shadow-2xs"
                   >
                     <div>
-                      <div className="font-mono text-sm font-semibold text-sky-300 group-hover:text-sky-200">
+                      <div className="font-mono text-sm font-semibold text-sky-800 group-hover:text-sky-950">
                         "{ex.label}"
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5">
+                      <div className="text-xs text-slate-500 mt-0.5">
                         {ex.description}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-700">
+                    <span className="text-[10px] font-medium uppercase px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 shadow-2xs">
                       {ex.mode === 'dg'
-                        ? 'D/G'
+                        ? 'Standard'
                         : ex.mode === 'tth'
-                          ? 'T/TH'
-                          : 'ENG'}
+                          ? 'Linguistic'
+                          : 'English'}
                     </span>
                   </button>
                 ))}
@@ -785,81 +819,272 @@ export const App: React.FC = () => {
           !error &&
           committedQuery.trim() &&
           groupedResults.length === 0 && (
-            <div className="text-center py-16 bg-slate-900/40 border border-slate-800 rounded-2xl">
-              <p className="text-base text-slate-300 font-medium mb-1">
-                No matching phrases found for "{committedQuery}"
+            <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl shadow-xs">
+              <p className="text-base text-slate-800 font-medium mb-1">
+                No matching recordings found for "{committedQuery}"
               </p>
               <p className="text-xs text-slate-500">
-                Try a shorter phonetic root, switch source filters, or click
-                "&lt;5% Confidence Hidden (Reveal)" at the top.
+                Try a shorter part of the word, switch collection filters, or click
+                "Include uncertain matches" at the top.
               </p>
             </div>
           )}
 
-        {/* Grouped Search Results */}
+        {/* Search Results */}
         {!loading && !error && groupedResults.length > 0 && (
           <div className="space-y-6">
-            {groupedResults.map(group => {
-              const isCollapsed = Boolean(collapsedGroups[group.source.source_id]);
-              return (
-                <section
-                  key={group.source.source_id}
-                  className="bg-slate-900/30 border border-slate-800/80 rounded-2xl overflow-hidden"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group.source.source_id)}
-                    className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/80 hover:bg-slate-900 border-b border-slate-800/60 text-left cursor-pointer transition"
+            {groupBySource ? (
+              groupedResults.map(group => {
+                const isCollapsed = Boolean(collapsedGroups[group.source.source_id]);
+                return (
+                  <section
+                    key={group.source.source_id}
+                    className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden"
                   >
-                    <div className="flex items-center gap-2.5">
-                      {isCollapsed ? (
-                        <ChevronRight className="w-4 h-4 text-slate-400" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4 text-slate-400" />
-                      )}
-                      <h2 className="font-bold text-sm sm:text-base text-white">
-                        {group.source.title}
-                      </h2>
-                      <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-sky-300 border border-slate-700">
-                        {group.matches.length}{' '}
-                        {group.matches.length === 1 ? 'match' : 'matches'}
-                      </span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.source.source_id)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-slate-50/90 hover:bg-slate-100/90 border-b border-slate-200 text-left cursor-pointer transition"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-slate-500" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-500" />
+                        )}
+                        <h2 className="font-bold text-sm sm:text-base text-slate-900">
+                          {group.source.title}
+                        </h2>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200">
+                          {group.matches.length}{' '}
+                          {group.matches.length === 1 ? 'recording' : 'recordings'}
+                        </span>
+                      </div>
 
-                    <div className="text-xs font-mono text-slate-400">
-                      {group.source.source_type === 'marked_syllabary_corpus' ? (
-                        <span className="text-slate-400">Segment Audio</span>
-                      ) : (
-                        <>
-                          Top Conf:{' '}
-                          <strong className="text-slate-200">
-                            {(group.topConfidence * 100).toFixed(1)}%
-                          </strong>
-                        </>
-                      )}
-                    </div>
-                  </button>
+                      <div
+                        className="text-xs text-slate-500 flex items-center gap-1"
+                        title={`Highest alignment confidence in this source: ${(group.topConfidence * 100).toFixed(1)}%`}
+                      >
+                        <Volume2 className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Click any word to listen</span>
+                      </div>
+                    </button>
 
-                  {!isCollapsed && (
-                    <div className="p-4 space-y-3">
-                      {group.matches.map(match => (
-                        <PhraseCard
-                          key={match.id}
-                          phrase={match}
-                          query={committedQuery}
-                          mode={committedMode}
-                          isActiveAudio={activeAudioPhraseId === match.id}
-                          onActivateAudio={setActiveAudioPhraseId}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
+                    {!isCollapsed && (
+                      <div className="p-4 space-y-3">
+                        {group.matches.map(match => (
+                          <PhraseCard
+                            key={match.id}
+                            phrase={match}
+                            source={group.source}
+                            showSourceBadge={false}
+                            turnPartInfo={turnPartCountsMap.get(match.id)}
+                            isContextTarget={contextPhrase?.id === match.id}
+                            onViewInContext={setContextPhrase}
+                            query={committedQuery}
+                            mode={committedMode}
+                            isActiveAudio={activeAudioPhraseId === match.id}
+                            onActivateAudio={setActiveAudioPhraseId}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            ) : (
+              <div className="space-y-3">
+                {flatResults.map(match => {
+                  const src = sourcesMap.get(match.source_id);
+                  return (
+                    <PhraseCard
+                      key={match.id}
+                      phrase={match}
+                      source={src}
+                      showSourceBadge={true}
+                      turnPartInfo={turnPartCountsMap.get(match.id)}
+                      isContextTarget={contextPhrase?.id === match.id}
+                      onViewInContext={setContextPhrase}
+                      query={committedQuery}
+                      mode={committedMode}
+                      isActiveAudio={activeAudioPhraseId === match.id}
+                      onActivateAudio={setActiveAudioPhraseId}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>
+
+      {/* Fixed Slide-Out Context Detail Panel (Right Drawer on Desktop, Full Screen on <lg) */}
+      {contextPhrase && contextSource && (
+        <ContextDetailPane
+          targetPhrase={contextPhrase}
+          source={contextSource}
+          allPhrases={phrases}
+          scoredMatchesMap={scoredMatchesMap}
+          turnPartCountsMap={turnPartCountsMap}
+          query={committedQuery}
+          mode={committedMode}
+          activeAudioPhraseId={activeAudioPhraseId}
+          onActivateAudio={setActiveAudioPhraseId}
+          onSelectContextPhrase={setContextPhrase}
+          onClose={() => setContextPhrase(null)}
+        />
+      )}
+
+      {/* How It Works Modal */}
+      {showTerminology && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-sky-600" />
+                <h3 className="font-bold text-base text-slate-900">
+                  How Digoliyetanidasdi Works
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTerminology(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-md cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 text-sm text-slate-600 leading-relaxed">
+              <section>
+                <h4 className="font-semibold text-slate-900 text-sm mb-1.5 flex items-center gap-1.5">
+                  <Volume2 className="w-4 h-4 text-sky-600" />
+                  Listening Word-by-Word
+                </h4>
+                <p className="text-xs leading-relaxed">
+                  <strong>Digoliyetanidasdi</strong> (ᏗᎪᎵᏰᏔᏂᏓᏍᏗ) connects written Cherokee and English translations directly to spoken audio recordings. Click the <strong>Play</strong> button to hear the whole phrase, or <strong>click directly on any Cherokee word</strong> to jump right to that moment in the recording. You can also slow down playback to <code>0.75x</code> or <code>0.5x</code> to hear pronunciation details clearly.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-slate-900 text-sm mb-2 flex items-center gap-1.5">
+                  <Languages className="w-4 h-4 text-sky-600" />
+                  Two Ways to Spell Cherokee in English Letters
+                </h4>
+                <p className="text-xs mb-2.5">
+                  Different Cherokee dictionaries and learning programs write Cherokee sounds in English letters differently. You can search using whichever style you know best:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="font-semibold text-slate-900 mb-1">
+                      1. Standard Spelling (d/t)
+                    </div>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Used in the 1975 Durbin Feeling Dictionary and most community classes. Uses <strong>d</strong>, <strong>g</strong>, <strong>j</strong>, and <strong>ch</strong> (for example: <code>gadu</code> for bread, <code>anichuja</code> for boys, <code>adalenisgv</code> for beginning).
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="font-semibold text-slate-900 mb-1">
+                      2. Linguistic Spelling (t/th)
+                    </div>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Highlights the difference between soft sounds (<strong>t</strong>, <strong>k</strong>, <strong>ts</strong>) and sounds spoken with a puff of air (<strong>th</strong>, <strong>kh</strong>, <strong>tsh</strong>) — for example: <code>katu</code>, <code>anitshutsa</code>, <code>atalenihskv</code>.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-slate-900 text-sm mb-2 flex items-center gap-1.5">
+                  <Gauge className="w-4 h-4 text-emerald-600" />
+                  Computer-Generated Word Timing & Quality Colors
+                </h4>
+                <p className="text-xs mb-2.5">
+                  A computer model listened to every recording and matched the spoken audio to the written transcript. Because fluent elders speak naturally — sometimes blending words, speaking quickly, or dropping quiet vowels — the computer's timing is sometimes approximate. Hover your mouse over any word or badge to inspect its exact confidence percentage:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
+                    <strong>Clear match (≥ 80%)</strong>
+                    <p className="text-[11px] text-emerald-700 mt-0.5">
+                      Crisp audio alignment. Great for studying word pronunciation.
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                    <strong>Approximate (10–79%)</strong>
+                    <p className="text-[11px] text-amber-700 mt-0.5">
+                      Fast conversational speech or natural vowel dropping.
+                    </p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900">
+                    <strong>Uncertain (&lt; 10%)</strong>
+                    <p className="text-[11px] text-rose-700 mt-0.5">
+                      Background noise or overlap. Very uncertain matches (&lt;5%) are hidden unless you click "Include uncertain matches".
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-slate-900 text-sm mb-1.5 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-teal-600" />
+                  About the Recording Collections
+                </h4>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>
+                    <strong>1975 Dictionary</strong>: Clear studio recordings of headwords and example sentences from the Durbin Feeling <em>Cherokee-English Dictionary</em>.
+                  </li>
+                  <li>
+                    <strong>New Testament</strong>: Continuous chapter readings of the Cherokee New Testament.
+                  </li>
+                  <li>
+                    <strong>Saving the Voices (ᎠᏂᏬᏂᏍᎩ ᎤᏂᏍᏆᏂᎪᏛᎢ)</strong>: Unscripted interviews with fluent Cherokee elders sharing stories, history, and everyday conversation.
+                  </li>
+                </ul>
+              </section>
+
+              {/* Expandable Under the Hood Section for Curious Readers / Linguists */}
+              <section className="pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowUnderTheHood(prev => !prev)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-sky-700 cursor-pointer"
+                >
+                  {showUnderTheHood ? (
+                    <ChevronDown className="w-4 h-4 text-slate-500" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-500" />
+                  )}
+                  <span>Under the Hood (For Linguists & Technical Readers)</span>
+                </button>
+
+                {showUnderTheHood && (
+                  <div className="mt-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs text-slate-600">
+                    <p>
+                      <strong>Acoustic Forced Alignment:</strong> Recordings are aligned using a Wav2Vec2-CTC acoustic model trained on historical Cherokee speech, paired with Silero Voice Activity Detection (VAD) soft-masking.
+                    </p>
+                    <p>
+                      <strong>Vowel Dropping (Syncope) & Intrusions:</strong> Conversational Cherokee frequently drops unstressed short vowels and inserts unwritten phonetic aspiration (<em>h</em>) or glottal stops (<code>'</code>). Our alignment pipeline uses a syncope- and intrusion-aware dynamic programming trellis so conversational elisions align cleanly without derailing word boundaries.
+                    </p>
+                    <p>
+                      <strong>Orthographic Transduction:</strong> Standard (d/t) queries are normalized to unaspirated/aspirated (t/th) representations at search time, with an automatic broad fallback (stripping <em>h</em> and glottal stops) so learners can find words even if aspiration is omitted.
+                    </p>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowTerminology(false)}
+                className="px-4 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-medium rounded-lg text-xs cursor-pointer shadow-xs"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

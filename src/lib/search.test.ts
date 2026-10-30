@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildOrderedSourceContextWindow,
   buildPhoneticHighlightRegex,
+  buildTurnPartCountsMap,
   createCorpusIndexes,
+  flattenAndSortMatches,
+  formatUngroupedSourceLocation,
   normalizeDGQueryToTTH,
   normalizeTTHQuery,
   phoneticNgramTokenizer,
@@ -337,5 +341,140 @@ describe('Multi-Index Search & Confidence Sorting', () => {
       'dict_ex_test_2',
       'dict_ex_be81dc927487',
     ]);
+  });
+
+  it('flattens and sorts matches globally across sources when ungrouped', () => {
+    const groups = searchCorpus(
+      'ts',
+      'tth',
+      indexes,
+      phrasesMap,
+      sourcesMap,
+      'shortest_sentence'
+    );
+    const flat = flattenAndSortMatches(groups, 'shortest_sentence', sourcesMap);
+    // Word counts: dict_ex_test_2 (2), dict_ex_be81dc927487 (4), stv_0001_toney_cornshucker_seg_0004 (6), nt_mar_01_001 (8)
+    expect(flat.map(m => m.id)).toEqual([
+      'dict_ex_test_2',
+      'dict_ex_be81dc927487',
+      'stv_0001_toney_cornshucker_seg_0004',
+      'nt_mar_01_001',
+    ]);
+  });
+
+  it('formats concise non-redundant source and location badges when ungrouped', () => {
+    const dictBadge = formatUngroupedSourceLocation(mockSources[0], mockPhrases[0]);
+    expect(dictBadge).toEqual({
+      sourceLabel: '1975 Dictionary',
+      locLabel: 'Entry 0004',
+    });
+
+    const bibleBadge = formatUngroupedSourceLocation(mockSources[1], mockPhrases[2]);
+    expect(bibleBadge).toEqual({
+      sourceLabel: 'Mark',
+      locLabel: '1:1',
+    });
+
+    const stvBadge = formatUngroupedSourceLocation(mockSources[2], mockPhrases[3]);
+    expect(stvBadge).toEqual({
+      sourceLabel: 'Toney Cornshucker (ᏐᏂ ᏎᎷᏕᏍᎩ)',
+      locLabel: 'Seg 004 (0:14)',
+    });
+  });
+
+  it('computes multi-part turn counts and builds Interview & Bible context windows', () => {
+    const resegmentedStvPhrases: PhraseRecord[] = [
+      {
+        ...mockPhrases[3],
+        id: 'stv_0001_toney_cornshucker_seg-001_p01',
+        loc_label: 'Seg 001.1 (0:01) • Charlie Shell',
+        loc_index: 101,
+        turn_id: 'seg-001',
+        phrase_index: 1,
+        speaker_label: 'Charlie Shell',
+        english_text: 'How are you doing?',
+      },
+      {
+        ...mockPhrases[3],
+        id: 'stv_0001_toney_cornshucker_seg-002_p01',
+        loc_label: 'Seg 002.1 (0:05) • Toney Cornshucker',
+        loc_index: 201,
+        turn_id: 'seg-002',
+        phrase_index: 1,
+        speaker_label: 'Toney Cornshucker',
+        english_text: 'I am doing well today, and I went to town this morning.',
+        turn_audio_path: 'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.wav',
+        turn_start_sec: 5.0,
+        turn_end_sec: 22.0,
+      },
+      {
+        ...mockPhrases[3],
+        id: 'stv_0001_toney_cornshucker_seg-002_p02',
+        loc_label: 'Seg 002.2 (0:14) • Toney Cornshucker',
+        loc_index: 202,
+        turn_id: 'seg-002',
+        phrase_index: 2,
+        speaker_label: 'Toney Cornshucker',
+        english_text: 'I am doing well today, and I went to town this morning.',
+        turn_audio_path: 'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.wav',
+        turn_start_sec: 5.0,
+        turn_end_sec: 22.0,
+      },
+      {
+        ...mockPhrases[3],
+        id: 'stv_0001_toney_cornshucker_seg-003_p01',
+        loc_label: 'Seg 003.1 (0:23) • Charlie Shell',
+        loc_index: 301,
+        turn_id: 'seg-003',
+        phrase_index: 1,
+        speaker_label: 'Charlie Shell',
+        english_text: 'Who did you see there?',
+      },
+    ];
+
+    const partMap = buildTurnPartCountsMap(resegmentedStvPhrases);
+    expect(partMap.get('stv_0001_toney_cornshucker_seg-002_p01')).toEqual({
+      turnId: 'seg-002',
+      phraseIndex: 1,
+      turnPhraseCount: 2,
+    });
+    expect(partMap.get('stv_0001_toney_cornshucker_seg-002_p02')).toEqual({
+      turnId: 'seg-002',
+      phraseIndex: 2,
+      turnPhraseCount: 2,
+    });
+
+    const stvWindow = buildOrderedSourceContextWindow(
+      resegmentedStvPhrases[2],
+      mockSources[2],
+      resegmentedStvPhrases,
+      1,
+      1
+    );
+    expect(stvWindow).not.toBeNull();
+    expect(stvWindow?.kind).toBe('marked_syllabary_corpus');
+    if (stvWindow?.kind === 'marked_syllabary_corpus') {
+      expect(stvWindow.turns).toHaveLength(3);
+      const targetTurn = stvWindow.turns[1];
+      expect(targetTurn.turnId).toBe('seg-002');
+      expect(targetTurn.isTargetTurn).toBe(true);
+      expect(targetTurn.phrases).toHaveLength(2);
+      expect(targetTurn.englishText).toBe(
+        'I am doing well today, and I went to town this morning.'
+      );
+      expect(targetTurn.turnAudioPath).toBe(
+        'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.wav'
+      );
+    }
+
+    // Dictionary returns null context window
+    const dictWindow = buildOrderedSourceContextWindow(
+      mockPhrases[0],
+      mockSources[0],
+      mockPhrases,
+      3,
+      3
+    );
+    expect(dictWindow).toBeNull();
   });
 });
