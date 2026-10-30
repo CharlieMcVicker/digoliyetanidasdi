@@ -1,0 +1,272 @@
+[
+  {
+    "source_id": "nt_mat_01",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 1",
+    "sort_order": 101
+  },
+  {
+    "source_id": "nt_mat_02",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 2",
+    "sort_order": 102
+  },
+  {
+    "source_id": "nt_mat_03",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 3",
+    "sort_order": 103
+  },
+  {
+    "source_id": "nt_mat_04",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 4",
+    "sort_order": 104
+  },
+  {
+    "source_id": "nt_mat_05",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 5",
+    "sort_order": 105
+  },
+  {
+    "source_id": "nt_mat_06",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 6",
+    "sort_order": 106
+  },
+  {
+    "source_id": "nt_mat_07",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 7",
+    "sort_order": 107
+  },
+  {
+    "source_id": "nt_mat_08",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 8",
+    "sort_order": 108
+  },
+  {
+    "source_id": "nt_mat_09",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 9",
+    "sort_order": 109
+  },
+  {
+    "source_id": "nt_mat_10",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 10",
+    "sort_order": 110
+  },
+  {
+    "source_id": "nt_mat_11",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 11",
+    "sort_order": 111
+  },
+  {
+    "source_id": "nt_mat_12",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 12",
+    "sort_order": 112
+  },
+  {
+    "source_id": "nt_mat_13",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 13",
+    "sort_order": 113
+  },
+  {
+    "source_id": "nt_mat_14",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 14",
+    "sort_order": 114
+  },
+  {
+    "source_id": "nt_mat_15",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 15",
+    "sort_order": 115
+  },
+  {
+    "source_id": "nt_mat_16",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 16",
+    "sort_order": 116
+  },
+  {
+    "source_id": "nt_mat_17",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 17",
+    "sort_order": 117
+  },
+  {
+    "source_id": "nt_mat_18",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 18",
+    "sort_order": 118
+  },
+  {
+    "source_id": "nt_mat_19",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 19",
+    "sort_order": 119
+  },
+  {
+    "source_id": "nt_mat_20",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 20",
+    "sort_order": 120
+  },
+  {
+    "source_id": "nt_mat_21",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 21",
+    "sort_order": 121
+  },
+  {
+    "source_id": "nt_mat_22",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 22",
+    "sort_order": 122
+  },
+  {
+    "source_id": "nt_mat_23",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 23",
+    "sort_order": 123
+  },
+  {
+    "source_id": "nt_mat_24",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 24",
+    "sort_order": 124
+  },
+  {
+    "source_id": "nt_mat_25",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 25",
+    "sort_order": 125
+  },
+  {
+    "source_id": "nt_mat_26",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 26",
+    "sort_order": 126
+  },
+  {
+    "source_id": "nt_mat_27",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 27",
+    "sort_order": 127
+  },
+  {
+    "source_id": "nt_mat_28",
+    "source_type": "biblical_chapter",
+    "title": "Matthew 28",
+    "sort_order": 128
+  },
+  {
+    "source_id": "nt_mar_01",
+    "source_type": "biblical_chapter",
+    "title": "Mark 1",
+    "sort_order": 201
+  },
+  {
+    "source_id": "nt_mar_02",
+    "source_type": "biblical_chapter",
+    "title": "Mark 2",
+    "sort_order": 202
+  },
+  {
+    "source_id": "nt_mar_03",
+    "source_type": "biblical_chapter",
+    "title": "Mark 3",
+    "sort_order": 203
+  },
+  {
+    "source_id": "nt_mar_04",
+    "source_type": "biblical_chapter",
+    "title": "Mark 4",
+    "sort_order": 204
+  },
+  {
+    "source_id": "nt_mar_05",
+    "source_type": "biblical_chapter",
+    "title": "Mark 5",
+    "sort_order": 205
+  },
+  {
+    "source_id": "nt_mar_06",
+    "source_type": "biblical_chapter",
+    "title": "Mark 6",
+    "sort_order": 206
+  },
+  {
+    "source_id": "nt_mar_07",
+    "source_type": "biblical_chapter",
+    "title": "Mark 7",
+    "sort_order": 207
+  },
+  {
+    "source_id": "nt_mar_08",
+    "source_type": "biblical_chapter",
+    "title": "Mark 8",
+    "sort_order": 208
+  },
+  {
+    "source_id": "nt_mar_09",
+    "source_type": "biblical_chapter",
+    "title": "Mark 9",
+    "sort_order": 209
+  },
+  {
+    "source_id": "nt_mar_10",
+    "source_type": "biblical_chapter",
+    "title": "Mark 10",
+    "sort_order": 210
+  },
+  {
+    "source_id": "nt_mar_11",
+    "source_type": "biblical_chapter",
+    "title": "Mark 11",
+    "sort_order": 211
+  },
+  {
+    "source_id": "nt_mar_12",
+    "source_type": "biblical_chapter",
+    "title": "Mark 12",
+    "sort_order": 212
+  },
+  {
+    "source_id": "nt_mar_13",
+    "source_type": "biblical_chapter",
+    "title": "Mark 13",
+    "sort_order": 213
+  },
+  {
+    "source_id": "nt_mar_14",
+    "source_type": "biblical_chapter",
+    "title": "Mark 14",
+    "sort_order": 214
+  },
+  {
+    "source_id": "nt_mar_15",
+    "source_type": "biblical_chapter",
+    "title": "Mark 15",
+    "sort_order": 215
+  },
+  {
+    "source_id": "nt_mar_16",
+    "source_type": "biblical_chapter",
+    "title": "Mark 16",
+    "sort_order": 216
+  },
+  {
+    "source_id": "dict_feeling_1975",
+    "source_type": "dictionary_collection",
+    "title": "Cherokee Dictionary Examples (1975 Feeling)",
+    "sort_order": 1000
+  }
+]
