@@ -75,6 +75,9 @@ CTC_CACHE_DIR = WORKSHOP_DIR / ".cache/ctc_emissions"
 STV_DIR = REPO_ROOT / "data/saving-the-voices"
 STV_COLLECTION_JSON = STV_DIR / "saving-the-voices.json"
 STV_TRANSCRIPTS_DIR = STV_DIR / "transcripts"
+STV_SPLIT_AUDIO_DIR = STV_DIR / "split_audio"
+STV_TURN_AUDIO_DIR = STV_DIR / "turn_audio"
+STV_ALIGNMENTS_DIR = STV_DIR / "alignments"
 KIWA_BASE_URL = "https://cherokee-language-hub.kiwadigital.com"
 
 
@@ -731,6 +734,80 @@ def build_saving_the_voices_corpus(
             else media_rel_url
         )
 
+        aligned_manifest_file = STV_ALIGNMENTS_DIR / f"{source_id}_aligned.json"
+        if aligned_manifest_file.exists():
+            with open(aligned_manifest_file, "r", encoding="utf-8") as f:
+                aligned_data = json.load(f)
+            sources.append(
+                {
+                    "source_id": source_id,
+                    "source_type": "marked_syllabary_corpus",
+                    "title": display_title,
+                    "sort_order": 2000 + interview_num,
+                }
+            )
+            stv_sources_count += 1
+            seg_speaker_map: Dict[str, str] = {}
+            for idx_s, s_obj in enumerate(segments, start=1):
+                s_id = str(s_obj.get("id") or f"seg-{idx_s:03d}")
+                sp_lbl = (
+                    (s_obj.get("speakerLabel") or "").strip()
+                    or _format_speaker_name(str(s_obj.get("speaker") or ""))
+                )
+                if sp_lbl:
+                    seg_speaker_map[s_id] = sp_lbl
+
+            raw_phrases = aligned_data.get("phrases", [])
+            turn_counts: Dict[str, int] = {}
+            for p in raw_phrases:
+                t_id = str(p.get("turn_id") or "")
+                turn_counts[t_id] = turn_counts.get(t_id, 0) + 1
+
+            for p in raw_phrases:
+                t_id = str(p.get("turn_id") or "")
+                turn_num_match = re.search(r"(\d+)", t_id)
+                turn_num_int = int(turn_num_match.group(1)) if turn_num_match else 1
+                turn_clean = f"{turn_num_int:03d}"
+                speaker_lbl = seg_speaker_map.get(t_id) or title_en
+                t_total = turn_counts.get(t_id, 1)
+                turn_wav_disk = STV_TURN_AUDIO_DIR / source_id / f"{t_id}.wav"
+                turn_audio_rel = (
+                    f"stv_turn_audio/{source_id}/{t_id}.wav"
+                    if turn_wav_disk.exists()
+                    else None
+                )
+                phrases.append(
+                    {
+                        "id": p["phrase_id"],
+                        "source_id": source_id,
+                        "loc_label": f"Seg {turn_clean}.{p['phrase_index']} ({_format_mm_ss(p['global_start_sec'])}) • {speaker_lbl}",
+                        "loc_index": turn_num_int * 100 + p["phrase_index"],
+                        "turn_id": t_id,
+                        "phrase_index": p["phrase_index"],
+                        "turn_phrase_count": t_total,
+                        "speaker_label": speaker_lbl,
+                        "turn_audio_path": turn_audio_rel,
+                        "turn_start_sec": p.get("turn_start_sec"),
+                        "turn_end_sec": p.get("turn_end_sec"),
+                        "global_start_sec": p.get("global_start_sec"),
+                        "global_end_sec": p.get("global_end_sec"),
+                        "phonetic_text": p["phonetic_text"],
+                        "phonetic_broad": p["phonetic_broad"],
+                        "syllabary_text": p["syllabary_text"],
+                        "english_text": p.get("english_text"),
+                        "audio_path": p["wav_rel_path"],
+                        "audio_start": 0.0,
+                        "audio_end": p["duration_sec"],
+                        "mean_confidence": p["mean_confidence"],
+                        "min_confidence": p["min_confidence"],
+                        "has_anomalies": p["has_anomalies"],
+                        "words": p["words"],
+                    }
+                )
+                stv_phrases_count += 1
+            logger.info("Ingested %d locally aligned phrases for %s", len(raw_phrases), source_id)
+            continue
+
         added_source = False
         for seg_idx, seg in enumerate(segments, start=1):
             raw_text = (seg.get("text") or "").strip()
@@ -799,6 +876,14 @@ def build_saving_the_voices_corpus(
                     "source_id": source_id,
                     "loc_label": loc_label,
                     "loc_index": seg_num,
+                    "turn_id": seg_id_raw,
+                    "phrase_index": 1,
+                    "turn_phrase_count": 1,
+                    "speaker_label": speaker_label or title_en,
+                    "turn_start_sec": start_sec,
+                    "turn_end_sec": end_sec,
+                    "global_start_sec": start_sec,
+                    "global_end_sec": end_sec,
                     "phonetic_text": phon_text,
                     "phonetic_broad": create_broad_tth(phon_text),
                     "syllabary_text": syl_text,
@@ -822,11 +907,15 @@ def build_saving_the_voices_corpus(
 
 
 def ensure_audio_symlinks() -> None:
-    """Creates symlinks in public/ pointing to sentence_audio and split_audio."""
+    """Creates symlinks in public/ pointing to sentence_audio, split_audio, stv_audio, and stv_turn_audio."""
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+    STV_SPLIT_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    STV_TURN_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     links = [
         (PUBLIC_DIR / "sentence_audio", SENTENCE_AUDIO_DIR),
         (PUBLIC_DIR / "split_audio", BIBLE_SPLIT_AUDIO_DIR),
+        (PUBLIC_DIR / "stv_audio", STV_SPLIT_AUDIO_DIR),
+        (PUBLIC_DIR / "stv_turn_audio", STV_TURN_AUDIO_DIR),
     ]
     for link_path, target_path in links:
         if link_path.is_symlink() or link_path.exists():
