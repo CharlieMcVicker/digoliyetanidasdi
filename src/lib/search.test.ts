@@ -23,6 +23,12 @@ const mockSources: DocumentMeta[] = [
     title: 'Mark 1',
     sort_order: 201,
   },
+  {
+    source_id: 'stv_0001_toney_cornshucker',
+    source_type: 'marked_syllabary_corpus',
+    title: 'Saving the Voices: Toney Cornshucker (ᏐᏂ ᏎᎷᏕᏍᎩ)',
+    sort_order: 2001,
+  },
 ];
 
 const mockPhrases: PhraseRecord[] = [
@@ -92,6 +98,31 @@ const mockPhrases: PhraseRecord[] = [
       { word: 'unelhanvhi', start: 4.12, end: 4.8, confidence: 0.6493, flagged: false },
       { word: 'uwetsi', start: 4.9, end: 5.42, confidence: 0.9988, flagged: false },
       { word: 'utselika', start: 5.94, end: 6.7, confidence: 0.9944, flagged: false },
+    ],
+  },
+  {
+    id: 'stv_0001_toney_cornshucker_seg_0004',
+    source_id: 'stv_0001_toney_cornshucker',
+    loc_label: 'Seg 004 (0:14) • Toney Cornshucker',
+    loc_index: 4,
+    phonetic_text: "mhm huh to ulsthanitole truck'i tsitssone",
+    phonetic_broad: 'mm u to ulstanitole trucki tsitssone',
+    syllabary_text: 'Mhm Huh Ꮩ ᎤᎵᏍᏔᏂᏙᎴ truckᎢ ᏥᏣᏐᏁ',
+    english_text: 'Mhm. What happened when the truck hit you?',
+    audio_path:
+      'https://cherokee-language-hub.kiwadigital.com/content/media/saving-the-voices/0001-sv-toney-cornshucker-r4.mp3',
+    audio_start: 14.2,
+    audio_end: 18.6,
+    mean_confidence: 1.0,
+    min_confidence: 1.0,
+    has_anomalies: false,
+    words: [
+      { word: 'mhm', start: 14.2, end: 18.6, confidence: 1.0, flagged: false },
+      { word: 'huh', start: 14.2, end: 18.6, confidence: 1.0, flagged: false },
+      { word: 'to', start: 14.2, end: 18.6, confidence: 1.0, flagged: false },
+      { word: 'ulsthanitole', start: 14.2, end: 18.6, confidence: 1.0, flagged: false },
+      { word: "truck'i", start: 14.2, end: 18.6, confidence: 1.0, flagged: false },
+      { word: 'tsitssone', start: 14.2, end: 18.6, confidence: 1.0, flagged: false },
     ],
   },
 ];
@@ -171,5 +202,140 @@ describe('Multi-Index Search & Confidence Sorting', () => {
     expect(regex).not.toBeNull();
     expect('anitshutsa'.replace(regex!, '<mark>$1</mark>')).toBe('<mark>anitshutsa</mark>');
     expect(toBroadTTH('anitshutsa')).toBe('anitsutsa');
+  });
+
+  it('matches Saving the Voices syncopated and code-switched tokens across strict, broad, and English search', () => {
+    // Syncopated token ulsthanitole (from ᎤᎵ,ᏍᏔᏂᏙᎴ)
+    const syncRes = searchCorpus('ulsthanitole', 'tth', indexes, phrasesMap, sourcesMap);
+    expect(syncRes).toHaveLength(1);
+    expect(syncRes[0].matches[0].id).toBe('stv_0001_toney_cornshucker_seg_0004');
+    expect(syncRes[0].matches[0].matchType).toBe('strict');
+    expect(syncRes[0].matches[0].matchedWordIndices).toEqual([3]);
+
+    // Broad match without aspiration h (ulstanitole)
+    const broadRes = searchCorpus('ulstanitole', 'tth', indexes, phrasesMap, sourcesMap);
+    expect(broadRes).toHaveLength(1);
+    expect(broadRes[0].matches[0].id).toBe('stv_0001_toney_cornshucker_seg_0004');
+    expect(broadRes[0].matches[0].matchType).toBe('broad');
+
+    // Code-switched compound clitic truck'i
+    const cliticRes = searchCorpus("truck'i", 'tth', indexes, phrasesMap, sourcesMap);
+    expect(cliticRes).toHaveLength(1);
+    expect(cliticRes[0].matches[0].matchedWordIndices).toEqual([4]);
+
+    // English translation search
+    const engRes = searchCorpus('truck hit', 'english', indexes, phrasesMap, sourcesMap);
+    expect(engRes).toHaveLength(1);
+    expect(engRes[0].matches[0].id).toBe('stv_0001_toney_cornshucker_seg_0004');
+  });
+
+  it('hides word matches and phrases with <5% confidence by default and reveals them when minConfidence is 0', () => {
+    // In Mark 1:1, the word "yhst" has confidence 0.041 (4.1% < 5%).
+    // By default (minConfidence = 0.05), searching for "yhst" excludes this <5% word match:
+    const defaultHiddenWord = searchCorpus('yhst', 'tth', indexes, phrasesMap, sourcesMap);
+    expect(defaultHiddenWord).toHaveLength(0);
+
+    // Revealing <5% confidence (minConfidence = 0) returns the match on "yhst":
+    const revealedWord = searchCorpus(
+      'yhst',
+      'tth',
+      indexes,
+      phrasesMap,
+      sourcesMap,
+      'matched_confidence',
+      { minConfidence: 0 }
+    );
+    expect(revealedWord).toHaveLength(1);
+    expect(revealedWord[0].matches[0].id).toBe('nt_mar_01_001');
+    expect(revealedWord[0].matches[0].matchedWordIndices).toEqual([1]);
+
+    // Also test a phrase whose overall mean_confidence is < 0.05:
+    const lowPhrase: PhraseRecord = {
+      ...mockPhrases[0],
+      id: 'low_mean_phrase',
+      mean_confidence: 0.03,
+      min_confidence: 0.01,
+    };
+    const extendedPhrases = [...mockPhrases, lowPhrase];
+    const extIndexes = createCorpusIndexes(extendedPhrases);
+    const extMap = new Map(extendedPhrases.map(p => [p.id, p]));
+
+    const hiddenMeanRes = searchCorpus('anichuja', 'dg', extIndexes, extMap, sourcesMap);
+    expect(hiddenMeanRes[0].matches.map(m => m.id)).not.toContain('low_mean_phrase');
+
+    const revealedMeanRes = searchCorpus(
+      'anichuja',
+      'dg',
+      extIndexes,
+      extMap,
+      sourcesMap,
+      'matched_confidence',
+      { minConfidence: 0 }
+    );
+    expect(revealedMeanRes[0].matches.map(m => m.id)).toContain('low_mean_phrase');
+  });
+
+  it('filters results by sourceType (corpus collection) and specific sourceId', () => {
+    // Query "ts" matches words across Dictionary ("anitshutsa"), NT ("tsihsa"), and STV ("tsitssone")
+    const allRes = searchCorpus('ts', 'tth', indexes, phrasesMap, sourcesMap);
+    expect(allRes.map(g => g.source.source_id).sort()).toEqual([
+      'dict_feeling_1975',
+      'nt_mar_01',
+      'stv_0001_toney_cornshucker',
+    ]);
+
+    const onlyDict = searchCorpus(
+      'ts',
+      'tth',
+      indexes,
+      phrasesMap,
+      sourcesMap,
+      'matched_confidence',
+      { sourceType: 'dictionary_collection' }
+    );
+    expect(onlyDict).toHaveLength(1);
+    expect(onlyDict[0].source.source_id).toBe('dict_feeling_1975');
+
+    const onlyBible = searchCorpus(
+      'ts',
+      'tth',
+      indexes,
+      phrasesMap,
+      sourcesMap,
+      'matched_confidence',
+      { sourceType: 'biblical_chapter' }
+    );
+    expect(onlyBible).toHaveLength(1);
+    expect(onlyBible[0].source.source_id).toBe('nt_mar_01');
+
+    const specificSource = searchCorpus(
+      'ts',
+      'tth',
+      indexes,
+      phrasesMap,
+      sourcesMap,
+      'matched_confidence',
+      { sourceId: 'stv_0001_toney_cornshucker' }
+    );
+    expect(specificSource).toHaveLength(1);
+    expect(specificSource[0].source.source_id).toBe('stv_0001_toney_cornshucker');
+  });
+
+  it('sorts matches by shortest sentence (fewest words first)', () => {
+    // Query "anichuja" matches dict_ex_be81dc927487 (4 words) and dict_ex_test_2 (2 words).
+    // With sortBy = 'shortest_sentence', the 2-word sentence comes first:
+    const groups = searchCorpus(
+      'anichuja',
+      'dg',
+      indexes,
+      phrasesMap,
+      sourcesMap,
+      'shortest_sentence'
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].matches.map(m => m.id)).toEqual([
+      'dict_ex_test_2',
+      'dict_ex_be81dc927487',
+    ]);
   });
 });

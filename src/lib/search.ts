@@ -4,6 +4,7 @@ import type {
   GroupedSearchResult,
   PhraseRecord,
   ScoredPhraseMatch,
+  SearchFilterOptions,
   SearchMode,
   SortOption,
 } from '../types/corpus';
@@ -132,13 +133,14 @@ export function createCorpusIndexes(phrases: PhraseRecord[]): CorpusIndexes {
 
 /**
  * Verifies that every space-separated query token appears as a contiguous substring
- * in at least one word of the phrase (in any order), and computes the matched word
- * indices and matched alignment confidence.
+ * in at least one word of the phrase (in any order) whose confidence is >= minConfidence,
+ * and computes the matched word indices and matched alignment confidence.
  */
 export function evaluatePhoneticSubstringMatch(
   phrase: PhraseRecord,
   queryTokens: string[],
-  isBroad: boolean
+  isBroad: boolean,
+  minConfidence: number = 0
 ): { matchesAll: boolean; matchedWordIndices: number[]; matchedConfidence: number } {
   if (queryTokens.length === 0) {
     return { matchesAll: false, matchedWordIndices: [], matchedConfidence: 0 };
@@ -153,6 +155,9 @@ export function evaluatePhoneticSubstringMatch(
 
     for (let i = 0; i < phrase.words.length; i++) {
       const wObj = phrase.words[i];
+      if (minConfidence > 0 && wObj.confidence < minConfidence) {
+        continue;
+      }
       const wText = isBroad ? toBroadTTH(wObj.word) : wObj.word;
       if (wText.includes(qTok)) {
         foundForThisToken = true;
@@ -182,6 +187,7 @@ export function evaluatePhoneticSubstringMatch(
 /**
  * Executes a search across the active SearchMode ('dg', 'tth', or 'english'),
  * applies non-sequential multi-word substring post-filtering for phonetic modes,
+ * filters by confidence (<5% hidden by default) and source/collection,
  * computes matched word confidence, and groups/sorts results.
  */
 export function searchCorpus(
@@ -191,10 +197,31 @@ export function searchCorpus(
   phrasesMap: Map<string, PhraseRecord>,
   sourcesMap: Map<string, DocumentMeta>,
   sortBy: SortOption = 'matched_confidence',
-  hideAnomalies: boolean = false
+  filtersOrHideAnomalies: SearchFilterOptions | boolean = false
 ): GroupedSearchResult[] {
   const trimmed = rawQuery.trim();
   if (!trimmed) return [];
+
+  const filters: SearchFilterOptions =
+    typeof filtersOrHideAnomalies === 'boolean'
+      ? { hideAnomalies: filtersOrHideAnomalies, minConfidence: 0.05 }
+      : filtersOrHideAnomalies;
+
+  const minConfidence = filters.minConfidence ?? 0.05;
+  const hideAnomalies = filters.hideAnomalies ?? false;
+  const filterSourceType = filters.sourceType ?? 'all';
+  const filterSourceId = filters.sourceId ?? 'all';
+
+  const passesPhraseFilters = (rec: PhraseRecord): boolean => {
+    if (hideAnomalies && rec.has_anomalies) return false;
+    if (minConfidence > 0 && rec.mean_confidence < minConfidence) return false;
+    if (filterSourceId !== 'all' && rec.source_id !== filterSourceId) return false;
+    if (filterSourceType !== 'all') {
+      const src = sourcesMap.get(rec.source_id);
+      if (!src || src.source_type !== filterSourceType) return false;
+    }
+    return true;
+  };
 
   const resultsMap = new Map<string, ScoredPhraseMatch>();
 
@@ -203,7 +230,7 @@ export function searchCorpus(
     for (const hit of englishHits) {
       const rec = phrasesMap.get(hit.id);
       if (!rec) continue;
-      if (hideAnomalies && rec.has_anomalies) continue;
+      if (!passesPhraseFilters(rec)) continue;
       resultsMap.set(rec.id, {
         ...rec,
         matchType: 'english',
@@ -230,9 +257,14 @@ export function searchCorpus(
       for (const cand of strictCandidateIds) {
         const rec = phrasesMap.get(cand.id);
         if (!rec) continue;
-        if (hideAnomalies && rec.has_anomalies) continue;
+        if (!passesPhraseFilters(rec)) continue;
 
-        const evalRes = evaluatePhoneticSubstringMatch(rec, strictQueryTokens, false);
+        const evalRes = evaluatePhoneticSubstringMatch(
+          rec,
+          strictQueryTokens,
+          false,
+          minConfidence
+        );
         if (evalRes.matchesAll) {
           resultsMap.set(rec.id, {
             ...rec,
@@ -256,9 +288,14 @@ export function searchCorpus(
         if (resultsMap.has(cand.id)) continue;
         const rec = phrasesMap.get(cand.id);
         if (!rec) continue;
-        if (hideAnomalies && rec.has_anomalies) continue;
+        if (!passesPhraseFilters(rec)) continue;
 
-        const evalRes = evaluatePhoneticSubstringMatch(rec, broadQueryTokens, true);
+        const evalRes = evaluatePhoneticSubstringMatch(
+          rec,
+          broadQueryTokens,
+          true,
+          minConfidence
+        );
         if (evalRes.matchesAll) {
           resultsMap.set(rec.id, {
             ...rec,
@@ -305,6 +342,16 @@ export function searchCorpus(
       const tierDiff = matchTierPriority(b) - matchTierPriority(a);
       if (tierDiff !== 0) return tierDiff;
 
+      if (sortBy === 'shortest_sentence') {
+        if (a.words.length !== b.words.length) {
+          return a.words.length - b.words.length;
+        }
+        if (a.phonetic_text.length !== b.phonetic_text.length) {
+          return a.phonetic_text.length - b.phonetic_text.length;
+        }
+        return b.matchedConfidence - a.matchedConfidence;
+      }
+
       if (sortBy === 'phrase_confidence') {
         if (b.mean_confidence !== a.mean_confidence) {
           return b.mean_confidence - a.mean_confidence;
@@ -327,6 +374,18 @@ export function searchCorpus(
   return Array.from(groups.values()).sort((a, b) => {
     if (sortBy === 'canonical') {
       return a.source.sort_order - b.source.sort_order;
+    }
+    if (sortBy === 'shortest_sentence') {
+      const aMinWords = Math.min(...a.matches.map(m => m.words.length));
+      const bMinWords = Math.min(...b.matches.map(m => m.words.length));
+      if (aMinWords !== bMinWords) {
+        return aMinWords - bMinWords;
+      }
+      const aMinChars = Math.min(...a.matches.map(m => m.phonetic_text.length));
+      const bMinChars = Math.min(...b.matches.map(m => m.phonetic_text.length));
+      if (aMinChars !== bMinChars) {
+        return aMinChars - bMinChars;
+      }
     }
     if (b.topConfidence !== a.topConfidence) {
       return b.topConfidence - a.topConfidence;

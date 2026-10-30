@@ -35,7 +35,26 @@ export interface PhraseRecord {
 
 export type SearchMode = 'dg' | 'tth' | 'english';
 
-export type SortOption = 'matched_confidence' | 'phrase_confidence' | 'canonical';
+export type SortOption =
+  | 'matched_confidence'
+  | 'phrase_confidence'
+  | 'shortest_sentence'
+  | 'canonical';
+
+export interface SearchFilterOptions {
+  /**
+   * Minimum confidence threshold (default 0.05 = 5%).
+   * Phrases with mean_confidence < threshold and phonetic word matches with
+   * word.confidence < threshold are hidden unless set to 0.
+   */
+  minConfidence?: number;
+  /** Whether to hide phrases flagged with alignment anomalies. */
+  hideAnomalies?: boolean;
+  /** Filter by top-level corpus collection ('all' or a specific SourceType). */
+  sourceType?: 'all' | SourceType;
+  /** Filter by a specific source_id ('all' or a specific source_id). */
+  sourceId?: string;
+}
 
 export interface ScoredPhraseMatch extends PhraseRecord {
   matchType: 'strict' | 'broad' | 'english';
