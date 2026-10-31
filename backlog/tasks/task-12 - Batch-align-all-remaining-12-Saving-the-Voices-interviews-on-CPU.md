@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@self'
 created_date: '2026-10-30 19:47'
-updated_date: '2026-10-30 20:47'
+updated_date: '2026-10-30 23:29'
 labels: []
 dependencies: []
 modified_files:
@@ -39,12 +39,11 @@ Batch align 3 Saving the Voices interviews (0014 Janet Navarro, 0019 Bud Foreman
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Batch aligned interviews 0014 (Janet Navarro), 0019 (Bud Foreman), and 0022 (Michael Pritchett) on CPU.
+Completed batch CTC forced alignment across all 12 remaining Saving the Voices interviews (0007, 0008, 0009, 0012, 0014, 0019, 0022, 0051, 0059, 0064, 0076, 0088) totaling 839.45 minutes (~14 hours) of Cherokee speech.
 
-Key Metrics:
-- Speech Duration: 169.65 min across 807 turns
-- Standalone Phrases Generated: 1,789 phrase WAVs sliced at acoustic pauses
-- Praat TextGrids (7-tier) and manifests exported for all 3 interviews
-- Ingested into public/data/phrases.json: corpus now has 15,557 total searchable phrases (7,338 locally aligned STV phrases across 17 interviews)
-- All 15 Python unit tests, 15 Vitest frontend tests, and Vite build pass cleanly.
+Final Corpus Totals:
+- 8,886 new standalone phrase WAVs sliced at acoustic pauses in this batch
+- 100% of all 22 transcribed Saving the Voices interviews are now locally aligned (13,857 STV phrases)
+- 17,463 total aligned phrases across all 67 corpus sources in public/data/phrases.json
+- All 15 Python unit tests, 15 Vitest tests, and Vite production build pass cleanly
 <!-- SECTION:FINAL_SUMMARY:END -->
