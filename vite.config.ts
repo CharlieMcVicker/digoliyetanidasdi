@@ -9,6 +9,7 @@ export default defineConfig({
     copyPublicDir: false,
   },
   server: {
+    port: 5174,
     fs: {
       allow: ['..', '/Users/julietmcvicker/code/workshop-transcription'],
     },

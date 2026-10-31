@@ -460,13 +460,21 @@ const ContextPhraseRow: React.FC<ContextPhraseRowProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s)`
                     : 'Click to play word'
                 }
-                className={`inline-block cursor-pointer rounded px-1 py-0.2 transition-colors ${
+                className={`inline-block cursor-pointer select-none touch-manipulation rounded px-1 py-0.2 transition-colors ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold'
                     : isMatched
@@ -496,13 +504,21 @@ const ContextPhraseRow: React.FC<ContextPhraseRowProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s)`
                     : 'Click to play word'
                 }
-                className={`inline-block cursor-pointer rounded px-1 py-0.2 transition-colors ${
+                className={`inline-block cursor-pointer select-none touch-manipulation rounded px-1 py-0.2 transition-colors ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold'
                     : isMatched
@@ -628,7 +644,7 @@ export const ContextDetailPane: React.FC<ContextDetailPaneProps> = ({
         className="relative z-10 w-full lg:w-[46vw] lg:max-w-xl h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200"
       >
         {/* Top Bar */}
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
+        <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
@@ -673,7 +689,7 @@ export const ContextDetailPane: React.FC<ContextDetailPaneProps> = ({
         {/* Scrollable Context Body */}
         <div
           ref={scrollContainerRef}
-          className="px-5 py-4 overflow-y-auto flex-1 divide-y divide-slate-200"
+          className="px-3 sm:px-5 py-3 sm:py-4 overflow-y-auto flex-1 divide-y divide-slate-200"
         >
           {/* Load Earlier Button */}
           {contextWindow.hasPrevious && (

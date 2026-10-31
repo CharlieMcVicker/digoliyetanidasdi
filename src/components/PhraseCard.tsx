@@ -263,23 +263,42 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
       return;
     }
 
+    const safePlay = (ws: WaveSurfer, start?: number, end?: number) => {
+      try {
+        let p: Promise<void> | undefined;
+        if (start !== undefined && end !== undefined) {
+          p = ws.play(Math.max(0, start), Math.max(start, end));
+        } else if (start !== undefined) {
+          const target = Math.max(0, start);
+          ws.setTime(target);
+          updateActiveWordFromTime(target);
+          p = ws.play();
+        } else {
+          p = ws.play();
+        }
+        if (p && typeof p.catch === 'function') {
+          p.catch(err => {
+            console.warn('Playback prevented or interrupted:', err);
+            setIsPlaying(false);
+          });
+        }
+      } catch (err) {
+        console.warn('Playback call failed:', err);
+        setIsPlaying(false);
+      }
+    };
+
     if (wavesurferRef.current && isReady) {
       const ws = wavesurferRef.current;
       if (seekToSeconds !== undefined) {
-        if (endSeconds !== undefined) {
-          void ws.play(Math.max(0, seekToSeconds), Math.max(seekToSeconds, endSeconds));
-        } else {
-          ws.setTime(Math.max(0, seekToSeconds));
-          updateActiveWordFromTime(seekToSeconds);
-          void ws.play();
-        }
+        safePlay(ws, seekToSeconds, endSeconds);
       } else if (ws.isPlaying()) {
         ws.pause();
       } else {
         if (ws.getCurrentTime() >= (duration > 0 ? duration - 0.05 : 0)) {
           ws.setTime(0);
         }
-        void ws.play();
+        safePlay(ws);
       }
       return;
     }
@@ -314,19 +333,16 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
         if (pendingPlaybackRef.current !== null) {
           const { start, end } = pendingPlaybackRef.current;
           pendingPlaybackRef.current = null;
-          if (start !== undefined && end !== undefined) {
-            void ws.play(Math.max(0, start), Math.max(start, end));
-          } else if (start !== undefined) {
-            const target = Math.max(0, start);
-            ws.setTime(target);
-            updateActiveWordFromTime(target);
-            void ws.play();
-          } else {
-            void ws.play();
-          }
+          safePlay(ws, start, end);
         } else {
-          void ws.play();
+          safePlay(ws);
         }
+      });
+
+      ws.on('error', (err: unknown) => {
+        console.error('WaveSurfer error on phrase:', phrase.id, err);
+        setIsReady(false);
+        setIsPlaying(false);
       });
 
       ws.on('timeupdate', (t: number) => {
@@ -387,7 +403,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
   return (
     <div
       id={`phrase-card-${phrase.id}`}
-      className={`rounded-xl border transition-all duration-150 p-4 ${
+      className={`rounded-xl border transition-all duration-150 p-3.5 sm:p-5 ${
         isActiveAudio
           ? 'bg-sky-50/50 border-sky-500 shadow-md ring-2 ring-sky-500/15'
           : isContextTarget
@@ -396,7 +412,7 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
       }`}
     >
       {/* Top Meta Row */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 mb-2.5 sm:mb-3">
         <div className="flex flex-wrap items-center gap-2">
           {ungroupedMeta ? (
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200">
@@ -497,15 +513,23 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? isRemoteAudio
-                      ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
-                      : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
+                    ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
+                    : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
                     : 'Click to play'
                 }
-                className={`inline-block cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-100 ${
+                className={`inline-block cursor-pointer select-none touch-manipulation rounded-md px-1.5 py-0.5 transition-all duration-100 ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold shadow-xs scale-105'
                     : isMatched && wConfStyle
@@ -534,15 +558,23 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? isRemoteAudio
-                      ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
-                      : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
+                    ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
+                    : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
                     : undefined
                 }
-                className={`inline-flex items-center gap-1 cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-100 ${
+                className={`inline-flex items-center gap-1 cursor-pointer select-none touch-manipulation rounded-md px-1.5 py-0.5 transition-all duration-100 ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold shadow-xs scale-105'
                     : isMatched && wConfStyle
@@ -571,11 +603,11 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
       )}
 
       {/* Audio Player & Waveform Bar */}
-      <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+      <div className="flex items-center gap-2 sm:gap-3 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2">
         <button
           type="button"
           onClick={() => ensureWaveSurferAndPlay()}
-          className="flex items-center justify-center w-9 h-9 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-bold transition shadow-xs cursor-pointer shrink-0"
+          className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-bold transition shadow-xs cursor-pointer shrink-0"
           title={isPlaying ? 'Pause' : 'Play phrase audio'}
         >
           {isPlaying ? (
@@ -603,16 +635,16 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
               className="h-9 flex flex-col justify-center gap-1.5 cursor-pointer select-none"
               title="Click to play or seek within remote interview segment"
             >
-              <div className="flex items-center justify-between text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1.5">
-                  <Volume2 className="w-3.5 h-3.5 text-sky-600" />
-                  <span>
+              <div className="flex items-center justify-between text-xs text-slate-600 gap-2">
+                <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                  <Volume2 className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  <span className="truncate">
                     {isReady
                       ? 'Streaming remote segment audio'
-                      : `Click Play to stream segment (${segmentDuration.toFixed(2)}s)`}
+                      : `Click Play to stream (${segmentDuration.toFixed(1)}s)`}
                   </span>
                 </span>
-                <span className="font-mono text-[11px] text-slate-500">
+                <span className="font-mono text-[10px] sm:text-[11px] text-slate-500 shrink-0">
                   {segmentStart.toFixed(1)}s – {segmentEnd.toFixed(1)}s
                 </span>
               </div>
@@ -638,12 +670,11 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
               {!isReady && (
                 <div
                   onClick={() => ensureWaveSurferAndPlay()}
-                  className="h-9 flex items-center gap-2 text-xs text-slate-500 hover:text-slate-800 cursor-pointer select-none"
+                  className="h-9 flex items-center gap-2 text-xs text-slate-500 hover:text-slate-800 cursor-pointer select-none min-w-0"
                 >
-                  <Volume2 className="w-4 h-4 text-sky-600" />
-                  <span>
-                    Click Play or any Cherokee word above to load waveform & listen (
-                    {segmentDuration.toFixed(2)}s)
+                  <Volume2 className="w-4 h-4 text-sky-600 shrink-0" />
+                  <span className="truncate">
+                    Click Play or word to load waveform & listen ({segmentDuration.toFixed(1)}s)
                   </span>
                 </div>
               )}
@@ -651,15 +682,15 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
           )}
         </div>
 
-        <div className="font-mono text-xs text-slate-500 tabular-nums shrink-0">
-          {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
+        <div className="font-mono text-[11px] sm:text-xs text-slate-500 tabular-nums shrink-0">
+          {currentTime.toFixed(1)}s / {duration.toFixed(1)}s
         </div>
 
         <select
           value={playbackRate}
           onChange={e => handleSpeedChange( parseFloat(e.target.value) )}
           aria-label="Playback speed"
-          className="bg-white border border-slate-300 text-slate-700 text-xs rounded px-1.5 py-1 font-mono focus:outline-none focus:border-sky-500"
+          className="bg-white border border-slate-300 text-slate-700 text-[11px] sm:text-xs rounded px-1 sm:px-1.5 py-1 font-mono focus:outline-none focus:border-sky-500"
         >
           <option value={0.5}>0.5x</option>
           <option value={0.75}>0.75x</option>
