@@ -3,6 +3,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   CornerDownLeft,
   Eye,
   EyeOff,
@@ -12,6 +13,7 @@ import {
   Languages,
   Layers,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Volume2,
   X,
@@ -89,14 +91,43 @@ const EXAMPLE_QUERIES: Array<{
   },
 ];
 
+interface SearchModeOption {
+  value: SearchMode;
+  label: string;
+  mobileLabel: string;
+  placeholder: string;
+}
+
+const SEARCH_MODE_OPTIONS: SearchModeOption[] = [
+  {
+    value: 'dg',
+    label: 'Standard Spelling (d/t)',
+    mobileLabel: 'Standard (d/t)',
+    placeholder: 'e.g. anichuja, adalenisgv, sgwà:hle̋:sdi...',
+  },
+  {
+    value: 'tth',
+    label: 'Linguistic Spelling (t/th)',
+    mobileLabel: 'Linguistic (t/th)',
+    placeholder: 'e.g. anitshutsa, atalenihskv...',
+  },
+  {
+    value: 'english',
+    label: 'English Meaning',
+    mobileLabel: 'English Meaning',
+    placeholder: 'e.g. playing ball, roosters, beginning...',
+  },
+];
+
 const SOURCE_TYPE_OPTIONS: Array<{
   value: 'all' | SourceType;
   label: string;
+  shortLabel: string;
 }> = [
-  { value: 'all', label: 'All Collections' },
-  { value: 'dictionary_collection', label: '1975 Dictionary' },
-  { value: 'biblical_chapter', label: 'New Testament' },
-  { value: 'marked_syllabary_corpus', label: 'Saving the Voices' },
+  { value: 'all', label: 'All Collections', shortLabel: 'All' },
+  { value: 'dictionary_collection', label: '1975 Dictionary', shortLabel: 'Dictionary' },
+  { value: 'biblical_chapter', label: 'New Testament', shortLabel: 'Bible' },
+  { value: 'marked_syllabary_corpus', label: 'Saving the Voices', shortLabel: 'Interviews' },
 ];
 
 export const App: React.FC = () => {
@@ -105,11 +136,9 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Three exclusive search box states (draft inputs)
-  const [dgInput, setDgInput] = useState('');
-  const [tthInput, setTthInput] = useState('');
-  const [englishInput, setEnglishInput] = useState('');
-  const [activeMode, setActiveMode] = useState<SearchMode>('dg');
+  // Unified search input & mode dropdown
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<SearchMode>('dg');
 
   // Committed query & mode (updated on Enter / Search button / Example click)
   const [committedQuery, setCommittedQuery] = useState('');
@@ -124,6 +153,7 @@ export const App: React.FC = () => {
   const [hideAnomalies, setHideAnomalies] = useState(false);
   const [selectedSourceType, setSelectedSourceType] = useState<'all' | SourceType>('all');
   const [selectedSourceId, setSelectedSourceId] = useState<string>('all');
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [activeAudioPhraseId, setActiveAudioPhraseId] = useState<string | null>(null);
   const [contextPhrase, setContextPhrase] = useState<PhraseRecord | null>(null);
@@ -165,20 +195,13 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  const currentRawQuery =
-    activeMode === 'dg'
-      ? dgInput
-      : activeMode === 'tth'
-        ? tthInput
-        : englishInput;
-
   const isDirty =
-    currentRawQuery.trim() !== committedQuery.trim() ||
-    (currentRawQuery.trim().length > 0 && activeMode !== committedMode);
+    searchQuery.trim() !== committedQuery.trim() ||
+    (searchQuery.trim().length > 0 && searchMode !== committedMode);
 
   const executeSearch = () => {
-    setCommittedQuery(currentRawQuery.trim());
-    setCommittedMode(activeMode);
+    setCommittedQuery(searchQuery.trim());
+    setCommittedMode(searchMode);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -187,6 +210,24 @@ export const App: React.FC = () => {
       executeSearch();
     }
   };
+
+  const clearInput = () => {
+    setSearchQuery('');
+    setCommittedQuery('');
+  };
+
+  const activeModeConfig =
+    SEARCH_MODE_OPTIONS.find(m => m.value === searchMode) || SEARCH_MODE_OPTIONS[0];
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedSourceType !== 'all') count++;
+    if (selectedSourceId !== 'all') count++;
+    if (showLowConfidence) count++;
+    if (sortBy !== 'matched_confidence') count++;
+    if (!groupBySource) count++;
+    return count;
+  }, [selectedSourceType, selectedSourceId, showLowConfidence, sortBy, groupBySource]);
 
   const { indexes, phrasesMap, sourcesMap, turnPartCountsMap, corpusStats } = useMemo(() => {
     const pMap = new Map<string, PhraseRecord>();
@@ -319,38 +360,9 @@ export const App: React.FC = () => {
     ? sourcesMap.get(contextPhrase.source_id)
     : undefined;
 
-  const handleDgChange = (val: string) => {
-    setActiveMode('dg');
-    setDgInput(val);
-    if (tthInput) setTthInput('');
-    if (englishInput) setEnglishInput('');
-  };
-
-  const handleTthChange = (val: string) => {
-    setActiveMode('tth');
-    setTthInput(val);
-    if (dgInput) setDgInput('');
-    if (englishInput) setEnglishInput('');
-  };
-
-  const handleEnglishChange = (val: string) => {
-    setActiveMode('english');
-    setEnglishInput(val);
-    if (dgInput) setDgInput('');
-    if (tthInput) setTthInput('');
-  };
-
-  const clearAllInputs = () => {
-    setDgInput('');
-    setTthInput('');
-    setEnglishInput('');
-    setCommittedQuery('');
-  };
-
   const applyExample = (ex: (typeof EXAMPLE_QUERIES)[number]) => {
-    if (ex.mode === 'dg') handleDgChange(ex.query);
-    else if (ex.mode === 'tth') handleTthChange(ex.query);
-    else handleEnglishChange(ex.query);
+    setSearchQuery(ex.query);
+    setSearchMode(ex.mode);
     setCommittedQuery(ex.query.trim());
     setCommittedMode(ex.mode);
   };
@@ -366,27 +378,28 @@ export const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Sticky Top Header */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-700 font-bold text-xl shadow-2xs">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3.5">
+          {/* Header Top Row: Branding, Stats & How It Works */}
+          <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-700 font-bold text-lg sm:text-xl shadow-2xs shrink-0">
                 Ꭰ
               </div>
-              <div>
-                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2 truncate">
                   Digoliyetanidasdi
                 </h1>
-                <p className="text-xs text-slate-500">
+                <p className="text-[11px] sm:text-xs text-slate-500 truncate hidden sm:block">
                   Search Spoken Cherokee Recordings & Translations
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs shrink-0">
               <button
                 type="button"
                 onClick={() => setShowTerminology(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-2xs transition cursor-pointer"
+                className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-2xs transition cursor-pointer"
                 title="Learn how Cherokee spelling search and audio word highlighting work"
               >
                 <HelpCircle className="w-3.5 h-3.5 text-sky-600" />
@@ -394,313 +407,246 @@ export const App: React.FC = () => {
               </button>
 
               {!loading && (
-                <>
+                <div className="hidden md:flex items-center gap-1.5">
                   <span className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-600 shadow-2xs">
                     Recordings: <strong className="text-slate-900">{corpusStats.totalPhrases.toLocaleString()}</strong>
                   </span>
                   <span className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-600 shadow-2xs">
                     Sources: <strong className="text-slate-900">{corpusStats.totalSources}</strong>
                   </span>
-                </>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Three Exclusive Search Boxes */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* Box 1: Standard (d/t) */}
-            <div
-              className={`rounded-xl border p-2.5 transition-all ${
-                activeMode === 'dg' && dgInput
-                  ? 'bg-white border-sky-500 ring-2 ring-sky-500/15 shadow-sm'
-                  : 'bg-slate-100/70 border-slate-200 focus-within:bg-white focus-within:border-sky-500/60 shadow-2xs'
-              }`}
-            >
-              <label
-                htmlFor="search-dg"
-                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
+          {/* Unified Search Bar with Mode Selector Dropdown */}
+          <div className="flex items-stretch rounded-xl border border-slate-300 bg-white shadow-xs focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 transition-all">
+            {/* Search Mode Dropdown */}
+            <div className="relative flex items-center border-r border-slate-200 bg-slate-50/90 hover:bg-slate-100 rounded-l-xl transition shrink-0">
+              <select
+                aria-label="Search mode"
+                value={searchMode}
+                onChange={e => setSearchMode(e.target.value as SearchMode)}
+                className="appearance-none bg-transparent pl-2.5 sm:pl-3.5 pr-6 sm:pr-8 py-2 text-xs sm:text-sm font-semibold text-slate-700 cursor-pointer focus:outline-none max-w-[125px] sm:max-w-none truncate"
               >
-                <span className="flex items-center gap-1.5">
-                  <Languages className="w-3.5 h-3.5 text-sky-600" />
-                  1. Standard Spelling (d/t)
-                </span>
-                <span className="text-[11px] font-normal text-slate-500">
-                  Community & Dictionary
-                </span>
-              </label>
-              <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 pointer-events-none" />
-                <input
-                  id="search-dg"
-                  type="text"
-                  value={dgInput}
-                  onFocus={() => setActiveMode('dg')}
-                  onChange={e => handleDgChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="e.g. anichuja, adalenisgv..."
-                  className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
-                />
-                {dgInput && (
-                  <button
-                    type="button"
-                    onClick={clearAllInputs}
-                    className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+                {SEARCH_MODE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-400 absolute right-1.5 sm:right-2.5 pointer-events-none" />
             </div>
 
-            {/* Box 2: Linguistic (t/th) */}
-            <div
-              className={`rounded-xl border p-2.5 transition-all ${
-                activeMode === 'tth' && tthInput
-                  ? 'bg-white border-sky-500 ring-2 ring-sky-500/15 shadow-sm'
-                  : 'bg-slate-100/70 border-slate-200 focus-within:bg-white focus-within:border-sky-500/60 shadow-2xs'
-              }`}
-            >
-              <label
-                htmlFor="search-tth"
-                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Volume2 className="w-3.5 h-3.5 text-violet-600" />
-                  2. Linguistic Spelling (t/th)
-                </span>
-                <span className="text-[11px] font-normal text-slate-500">
-                  Aspirated Sounds
-                </span>
-              </label>
-              <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 pointer-events-none" />
-                <input
-                  id="search-tth"
-                  type="text"
-                  value={tthInput}
-                  onFocus={() => setActiveMode('tth')}
-                  onChange={e => handleTthChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="e.g. anitshutsa, atalenihskv..."
-                  className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
-                />
-                {tthInput && (
-                  <button
-                    type="button"
-                    onClick={clearAllInputs}
-                    className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+            {/* Input */}
+            <div className="relative flex-1 flex items-center min-w-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-2.5 sm:left-3 pointer-events-none shrink-0" />
+              <input
+                id="search-input"
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={activeModeConfig.placeholder}
+                className={`w-full bg-transparent pl-8 sm:pl-9 pr-7 sm:pr-8 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none ${
+                  searchMode !== 'english' ? 'font-mono' : ''
+                }`}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={clearInput}
+                  aria-label="Clear search input"
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 rounded-full hover:bg-slate-100"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            {/* Box 3: English Meaning */}
-            <div
-              className={`rounded-xl border p-2.5 transition-all ${
-                activeMode === 'english' && englishInput
-                  ? 'bg-white border-sky-500 ring-2 ring-sky-500/15 shadow-sm'
-                  : 'bg-slate-100/70 border-slate-200 focus-within:bg-white focus-within:border-sky-500/60 shadow-2xs'
+            {/* Search Button */}
+            <button
+              type="button"
+              onClick={executeSearch}
+              disabled={!searchQuery.trim() && !committedQuery.trim()}
+              className={`inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-r-xl font-semibold text-xs sm:text-sm transition cursor-pointer shrink-0 ${
+                isDirty && searchQuery.trim()
+                  ? 'bg-sky-600 hover:bg-sky-500 text-white shadow-xs animate-pulse'
+                  : searchQuery.trim()
+                    ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed border-l border-slate-200'
               }`}
             >
-              <label
-                htmlFor="search-english"
-                className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5"
-              >
-                <span className="flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5 text-teal-600" />
-                  3. English Meaning
-                </span>
-                <span className="text-[11px] font-normal text-slate-500">
-                  Word or Phrase
-                </span>
-              </label>
-              <div className="relative flex items-center">
-                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 pointer-events-none" />
-                <input
-                  id="search-english"
-                  type="text"
-                  value={englishInput}
-                  onFocus={() => setActiveMode('english')}
-                  onChange={e => handleEnglishChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="e.g. playing ball, roosters..."
-                  className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-7 py-1.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20"
-                />
-                {englishInput && (
-                  <button
-                    type="button"
-                    onClick={clearAllInputs}
-                    className="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">
+                {isDirty && committedQuery ? 'Update' : 'Search'}
+              </span>
+              <span className="hidden md:inline-flex items-center gap-0.5 text-[10px] opacity-85 font-mono ml-0.5 px-1 py-0.2 rounded bg-black/15">
+                <CornerDownLeft className="w-2.5 h-2.5" />
+                Enter
+              </span>
+            </button>
           </div>
 
-          {/* Search Action + Source & Quality Filter Bar */}
-          <div className="mt-3 pt-3 border-t border-slate-200 flex flex-col gap-2.5 text-xs">
-            {/* Row 1: Search Trigger, Source Collection Pills & Specific Source Dropdown */}
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              {/* Left: Search / Update Search Button */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={executeSearch}
-                  disabled={!currentRawQuery.trim() && !committedQuery.trim()}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold text-xs transition cursor-pointer shadow-xs ${
-                    isDirty && currentRawQuery.trim()
-                      ? 'bg-sky-600 hover:bg-sky-500 text-white ring-2 ring-sky-400/40 animate-pulse'
-                      : currentRawQuery.trim()
-                        ? 'bg-sky-600 hover:bg-sky-700 text-white'
-                        : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                  }`}
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  {isDirty && committedQuery
-                    ? 'Update Search'
-                    : 'Search'}
-                  <span className="inline-flex items-center gap-0.5 text-[10px] opacity-90 font-mono ml-0.5 px-1 py-0.2 rounded bg-black/15">
-                    <CornerDownLeft className="w-2.5 h-2.5" />
-                    Enter
+          {/* Compact Bar: Status Summary + Mobile Filter Toggle Button */}
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              {committedQuery.trim() ? (
+                <div className="text-slate-600 truncate text-[11px] sm:text-xs">
+                  <span>
+                    <strong className="text-slate-900">{totalMatches}</strong>{' '}
+                    {totalMatches === 1 ? 'recording' : 'recordings'}
                   </span>
-                </button>
-              </div>
-
-              {/* Right: Source Collection Pills & Specific Source Dropdown */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-                  <Layers className="w-3.5 h-3.5 text-slate-500 ml-1.5 mr-0.5 hidden sm:inline" />
-                  {SOURCE_TYPE_OPTIONS.map(opt => {
-                    const active = selectedSourceType === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => handleSourceTypeChange(opt.value)}
-                        className={`px-2 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
-                          active
-                            ? 'bg-white text-sky-700 shadow-2xs border border-slate-200 font-semibold'
-                            : 'text-slate-600 hover:text-slate-900 border border-transparent'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <select
-                  aria-label="Filter by specific source"
-                  value={selectedSourceId}
-                  onChange={e => setSelectedSourceId(e.target.value)}
-                  className="bg-white border border-slate-300 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-sky-500 max-w-[230px] truncate shadow-2xs"
-                >
-                  <option value="all">
-                    All Sources ({availableSources.length})
-                  </option>
-                  {availableSources.map(s => (
-                    <option key={s.source_id} value={s.source_id}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Row 2: Match Status, Include Uncertain Matches Toggle & Sort */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div className="flex flex-wrap items-center gap-2">
-                {committedQuery.trim() ? (
-                  <span className="text-slate-600">
-                    Showing <strong className="text-slate-900">{totalMatches}</strong>{' '}
-                    {totalMatches === 1 ? 'recording' : 'recordings'} across{' '}
-                    <strong className="text-slate-900">{groupedResults.length}</strong>{' '}
+                  <span className="hidden sm:inline">
+                    {' '}across <strong className="text-slate-900">{groupedResults.length}</strong>{' '}
                     {groupedResults.length === 1 ? 'source' : 'sources'} for{' '}
                     <span className="font-mono text-sky-700 font-semibold">"{committedQuery}"</span>
-                    {isDirty && currentRawQuery.trim() && (
-                      <span className="ml-2 text-amber-700 font-medium">
-                        • Press Enter or click "Update Search" for "{currentRawQuery.trim()}"
-                      </span>
-                    )}
                   </span>
-                ) : (
-                  <span className="text-slate-500">
-                    {currentRawQuery.trim()
-                      ? 'Press Enter or click Search to run query.'
-                      : 'Word timings are computer-generated and may occasionally be off.'}
-                  </span>
-                )}
+                  {isDirty && searchQuery.trim() && (
+                    <span className="ml-1.5 text-amber-700 font-medium hidden sm:inline">
+                      • Press Enter to search "{searchQuery.trim()}"
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-slate-500 truncate text-[11px] sm:text-xs">
+                  {searchQuery.trim()
+                    ? 'Press Enter or click Search to find recordings.'
+                    : 'Cherokee audio corpus search with word-level alignment.'}
+                </div>
+              )}
+            </div>
+
+            {/* Mobile Filters Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(prev => !prev)}
+              className={`md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition shrink-0 ${
+                showMobileFilters || activeFilterCount > 0
+                  ? 'bg-sky-50 border-sky-300 text-sky-800'
+                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-sky-600 text-white text-[10px] flex items-center justify-center font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
+              {showMobileFilters ? (
+                <ChevronUp className="w-3 h-3 text-slate-500" />
+              ) : (
+                <ChevronDown className="w-3 h-3 text-slate-500" />
+              )}
+            </button>
+          </div>
+
+          {/* Filter & Sort Controls: Collapsible on Mobile, Expanded on Desktop */}
+          <div
+            className={`${
+              showMobileFilters ? 'flex' : 'hidden md:flex'
+            } flex-col gap-2 pt-2.5 mt-2 border-t border-slate-200 text-xs`}
+          >
+            {/* Row 1: Source Collection Pills & Specific Source Dropdown */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <Layers className="w-3.5 h-3.5 text-slate-500 ml-1 mr-0.5 hidden sm:inline" />
+                {SOURCE_TYPE_OPTIONS.map(opt => {
+                  const active = selectedSourceType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleSourceTypeChange(opt.value)}
+                      className={`px-2 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                        active
+                          ? 'bg-white text-sky-700 shadow-2xs border border-slate-200 font-semibold'
+                          : 'text-slate-600 hover:text-slate-900 border border-transparent'
+                      }`}
+                    >
+                      <span className="sm:hidden">{opt.shortLabel}</span>
+                      <span className="hidden sm:inline">{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
 
+              <select
+                aria-label="Filter by specific source"
+                value={selectedSourceId}
+                onChange={e => setSelectedSourceId(e.target.value)}
+                className="w-full sm:w-auto bg-white border border-slate-300 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-sky-500 max-w-full sm:max-w-[230px] truncate shadow-2xs"
+              >
+                <option value="all">
+                  All Sources ({availableSources.length})
+                </option>
+                {availableSources.map(s => (
+                  <option key={s.source_id} value={s.source_id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Row 2: Uncertain Matches, Sort, Grouping */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 sm:border-t-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLowConfidence(prev => !prev);
+                  setHideAnomalies(false);
+                }}
+                title={
+                  showLowConfidence
+                    ? 'Currently including recordings where computer word-timing is very uncertain (<5% confidence). Click to hide them.'
+                    : 'Recordings where computer word-timing is very uncertain (<5% confidence) are hidden by default. Click to include them.'
+                }
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition ${
+                  showLowConfidence
+                    ? 'bg-amber-50 text-amber-900 border-amber-300'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {showLowConfidence ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Including uncertain matches</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Include uncertain matches</span>
+                  </>
+                )}
+              </button>
+
               <div className="flex flex-wrap items-center gap-2">
-                {/* Single toggle for uncertain / noisy matches */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowLowConfidence(prev => !prev);
-                    setHideAnomalies(false);
-                  }}
-                  title={
-                    showLowConfidence
-                      ? 'Currently including recordings where computer word-timing is very uncertain (<5% confidence). Click to hide them.'
-                      : 'Recordings where computer word-timing is very uncertain (<5% confidence) are hidden by default. Click to include them.'
-                  }
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium cursor-pointer transition ${
-                    showLowConfidence
-                      ? 'bg-amber-50 text-amber-900 border-amber-300'
-                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  {showLowConfidence ? (
-                    <>
-                      <Eye className="w-3.5 h-3.5 text-amber-600" />
-                      Including uncertain matches
-                    </>
-                  ) : (
-                    <>
-                      <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                      Include uncertain matches
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <Gauge className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-slate-500">Sort:</span>
+                  <select
+                    aria-label="Sort results"
+                    value={sortBy}
+                    onChange={e => handleSortChange(e.target.value as SortOption)}
+                    className="bg-white border border-slate-300 text-slate-800 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-sky-500 shadow-2xs"
+                  >
+                    <option value="matched_confidence">Best Audio Match</option>
+                    <option value="phrase_confidence">Clearest Recording</option>
+                    <option value="shortest_sentence">Shortest Phrase</option>
+                    <option value="canonical">Book / Interview Order</option>
+                  </select>
+                </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <Gauge className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-slate-500">Sort:</span>
-                    <select
-                      aria-label="Sort results"
-                      value={sortBy}
-                      onChange={e => handleSortChange(e.target.value as SortOption)}
-                      className="bg-white border border-slate-300 text-slate-800 rounded-md px-2 py-1 text-xs focus:outline-none focus:border-sky-500 shadow-2xs"
-                    >
-                      <option value="matched_confidence">
-                        Best Audio Match
-                      </option>
-                      <option value="phrase_confidence">
-                        Clearest Recording
-                      </option>
-                      <option value="shortest_sentence">
-                        Shortest Phrase
-                      </option>
-                      <option value="canonical">
-                        Book / Interview Order
-                      </option>
-                    </select>
-                  </div>
-
-                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer select-none shadow-2xs transition">
-                    <input
-                      type="checkbox"
-                      checked={groupBySource}
-                      onChange={e => handleGroupBySourceChange(e.target.checked)}
-                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
-                    />
-                    <span>Group by source</span>
-                  </label>
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer select-none shadow-2xs transition">
+                  <input
+                    type="checkbox"
+                    checked={groupBySource}
+                    onChange={e => handleGroupBySourceChange(e.target.checked)}
+                    className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                  />
+                  <span>Group by source</span>
+                </label>
               </div>
             </div>
           </div>
@@ -708,7 +654,7 @@ export const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6">
         {loading && (
           <div className="text-center py-20 text-slate-500">
             <div className="inline-block w-8 h-8 border-2 border-sky-600 border-t-transparent rounded-full animate-spin mb-3" />
@@ -727,7 +673,7 @@ export const App: React.FC = () => {
 
         {/* Empty State Dashboard */}
         {!loading && !error && !committedQuery.trim() && (
-          <div className="max-w-3xl mx-auto my-8 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs">
+          <div className="max-w-3xl mx-auto my-4 sm:my-8 bg-white border border-slate-200 rounded-2xl p-4 sm:p-8 shadow-xs">
             <div className="flex items-center gap-2 text-sky-700 text-xs font-semibold uppercase tracking-wider mb-2">
               <Sparkles className="w-4 h-4" />
               Ready to Search
@@ -736,7 +682,7 @@ export const App: React.FC = () => {
               Listen to Spoken Cherokee Words & Sentences
             </h2>
             <p className="text-sm text-slate-600 leading-relaxed mb-4">
-              Type a word or phrase in any of the three boxes above and press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-xs border border-slate-200">Enter</kbd> (or click <strong>Search</strong>) to hear{' '}
+              Select what you want to search (Standard spelling, Linguistic, or English) in the search bar above and press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-xs border border-slate-200">Enter</kbd> (or click <strong>Search</strong>) to hear{' '}
               <strong className="text-slate-900">
                 {corpusStats.totalPhrases.toLocaleString()}
               </strong>{' '}
