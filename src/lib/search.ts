@@ -669,7 +669,7 @@ export function buildOrderedSourceContextWindow(
     const inferredTurnAudioPath =
       first?.turn_audio_path ??
       (!isRemote && tId.startsWith('seg-')
-        ? `stv_turn_audio/${source.source_id}/${tId}.wav`
+        ? `stv_turn_audio/${source.source_id}/${tId}.mp3`
         : isRemote
           ? first.audio_path
           : null);

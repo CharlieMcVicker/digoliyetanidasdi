@@ -316,7 +316,7 @@ def build_dictionary_corpus(
                 "phonetic_broad": create_broad_tth(canonical_tth),
                 "syllabary_text": final_syllabary,
                 "english_text": english_clean,
-                "audio_path": f"sentence_audio/{audio_filename}",
+                "audio_path": f"sentence_audio/{Path(audio_filename).stem}.mp3",
                 "audio_start": 0.0,
                 "audio_end": round(float(dur_sec), 3),
                 "mean_confidence": mean_conf,
@@ -421,7 +421,7 @@ def build_bible_corpus(
                 "phonetic_broad": create_broad_tth(canonical_tth),
                 "syllabary_text": final_syllabary,
                 "english_text": (rec.get("english") or "").strip() or None,
-                "audio_path": f"split_audio/{book}_{ch_num:02d}_{v_num:02d}.wav",
+                "audio_path": f"split_audio/{book}_{ch_num:02d}_{v_num:02d}.mp3",
                 "audio_start": 0.0,
                 "audio_end": clip_duration,
                 "mean_confidence": mean_conf,
@@ -772,7 +772,7 @@ def build_saving_the_voices_corpus(
                 t_total = turn_counts.get(t_id, 1)
                 turn_wav_disk = STV_TURN_AUDIO_DIR / source_id / f"{t_id}.wav"
                 turn_audio_rel = (
-                    f"stv_turn_audio/{source_id}/{t_id}.wav"
+                    f"stv_turn_audio/{source_id}/{t_id}.mp3"
                     if turn_wav_disk.exists()
                     else None
                 )
@@ -795,7 +795,7 @@ def build_saving_the_voices_corpus(
                         "phonetic_broad": p["phonetic_broad"],
                         "syllabary_text": p["syllabary_text"],
                         "english_text": p.get("english_text"),
-                        "audio_path": p["wav_rel_path"],
+                        "audio_path": p["wav_rel_path"].replace(".wav", ".mp3"),
                         "audio_start": 0.0,
                         "audio_end": p["duration_sec"],
                         "mean_confidence": p["mean_confidence"],

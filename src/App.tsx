@@ -135,9 +135,10 @@ export const App: React.FC = () => {
     async function loadData() {
       try {
         setLoading(true);
+        const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         const [sourcesRes, phrasesRes] = await Promise.all([
-          fetch('/data/sources.json'),
-          fetch('/data/phrases.json'),
+          fetch(`${base}/data/sources.json`),
+          fetch(`${base}/data/phrases.json`),
         ]);
         if (!sourcesRes.ok || !phrasesRes.ok) {
           throw new Error('Failed to load corpus JSON bundles from /data/');

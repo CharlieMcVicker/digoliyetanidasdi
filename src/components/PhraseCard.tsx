@@ -291,9 +291,11 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
     }
 
     if (!wavesurferRef.current && waveformContainerRef.current) {
+      const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+      const audioUrl = `${base}/${phrase.audio_path.replace(/^\/+/, '')}`;
       const ws = WaveSurfer.create({
         container: waveformContainerRef.current,
-        url: `/${phrase.audio_path}`,
+        url: audioUrl,
         height: 44,
         waveColor: '#94a3b8',
         progressColor: '#0284c7',

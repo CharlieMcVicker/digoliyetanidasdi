@@ -45,7 +45,7 @@ const mockPhrases: PhraseRecord[] = [
     phonetic_broad: 'na anitsutsa skwalesti tananelovska',
     syllabary_text: 'Ꮎ ᎠᏂᏧᏣ ᏍᏆᏞᏍᏗ ᏓᎾᏁᎶᎲᏍᎦ.',
     english_text: 'The boys are playing ball.',
-    audio_path: 'sentence_audio/Sentence_for_entry_0004.wav',
+    audio_path: 'sentence_audio/Sentence_for_entry_0004.mp3',
     audio_start: 0,
     audio_end: 3.714,
     mean_confidence: 0.9794,
@@ -67,7 +67,7 @@ const mockPhrases: PhraseRecord[] = [
     phonetic_broad: 'anitsutsa aninoalitoa',
     syllabary_text: 'ᎠᏂᏧᏣ ᎠᏂᏃᎭᎵᏙᎭ.',
     english_text: 'The boys are hunting.',
-    audio_path: 'sentence_audio/Sentence_for_entry_0099.wav',
+    audio_path: 'sentence_audio/Sentence_for_entry_0099.mp3',
     audio_start: 0,
     audio_end: 2.5,
     mean_confidence: 0.65,
@@ -87,7 +87,7 @@ const mockPhrases: PhraseRecord[] = [
     phonetic_broad: 'ataleniskv yst kanoetv tsisa kalonetv unelanvi uwetsi utselika',
     syllabary_text: 'ᎠᏓᎴᏂᏍᎬ ᏱᏍᏛ ᎧᏃᎮᏛ ᏥᏌ ᎦᎶᏁᏛ ᎤᏁᎳᏅᎯ ᎤᏪᏥ ᎤᏤᎵᎦ.',
     english_text: 'The beginning of the gospel of Jesus Christ, the Son of God;',
-    audio_path: 'split_audio/mark_01_01.wav',
+    audio_path: 'split_audio/mark_01_01.mp3',
     audio_start: 0,
     audio_end: 7.44,
     mean_confidence: 0.7414,
@@ -403,7 +403,7 @@ describe('Multi-Index Search & Confidence Sorting', () => {
         phrase_index: 1,
         speaker_label: 'Toney Cornshucker',
         english_text: 'I am doing well today, and I went to town this morning.',
-        turn_audio_path: 'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.wav',
+        turn_audio_path: 'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.mp3',
         turn_start_sec: 5.0,
         turn_end_sec: 22.0,
       },
@@ -416,7 +416,7 @@ describe('Multi-Index Search & Confidence Sorting', () => {
         phrase_index: 2,
         speaker_label: 'Toney Cornshucker',
         english_text: 'I am doing well today, and I went to town this morning.',
-        turn_audio_path: 'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.wav',
+        turn_audio_path: 'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.mp3',
         turn_start_sec: 5.0,
         turn_end_sec: 22.0,
       },
@@ -463,7 +463,7 @@ describe('Multi-Index Search & Confidence Sorting', () => {
         'I am doing well today, and I went to town this morning.'
       );
       expect(targetTurn.turnAudioPath).toBe(
-        'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.wav'
+        'stv_turn_audio/stv_0001_toney_cornshucker/seg-002.mp3'
       );
     }
 

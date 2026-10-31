@@ -150,7 +150,8 @@ const FullTurnAudioButton: React.FC<FullTurnAudioButtonProps> = ({
       return;
     }
 
-    const url = isRemote ? audioPath : `/${audioPath}`;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const url = isRemote ? audioPath : `${base}/${audioPath.replace(/^\/+/, '')}`;
     const a = new Audio(url);
     a.preload = 'metadata';
 
@@ -324,7 +325,8 @@ const ContextPhraseRow: React.FC<ContextPhraseRowProps> = ({
       return;
     }
 
-    const url = isRemoteAudio ? phrase.audio_path : `/${phrase.audio_path}`;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const url = isRemoteAudio ? phrase.audio_path : `${base}/${phrase.audio_path.replace(/^\/+/, '')}`;
     const a = new Audio(url);
     a.preload = 'metadata';
 
