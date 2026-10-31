@@ -16,6 +16,8 @@ import {
   buildPhoneticHighlightRegex,
   formatUngroupedSourceLocation,
 } from '../lib/search';
+import { getConfidenceColorClasses } from '../lib/confidence';
+import { renderHighlightedToken } from '../lib/highlight';
 
 export interface PhraseCardProps {
   phrase: PhraseRecord | ScoredPhraseMatch;
@@ -29,56 +31,6 @@ export interface PhraseCardProps {
   mode: SearchMode;
   isActiveAudio: boolean;
   onActivateAudio: (phraseId: string) => void;
-}
-
-function getConfidenceColorClasses(conf: number, flagged?: boolean) {
-  if (flagged || conf < 0.1) {
-    return {
-      badge: 'bg-rose-50 text-rose-800 border-rose-200',
-      word: 'bg-rose-100 text-rose-950 border-rose-300 ring-1 ring-rose-200',
-      label: 'Uncertain timing',
-      description: 'Machine-generated word timing is uncertain here and may be slightly off',
-      isLow: true,
-    };
-  }
-  if (conf < 0.8) {
-    return {
-      badge: 'bg-amber-50 text-amber-900 border-amber-200',
-      word: 'bg-amber-100 text-amber-950 border-amber-300 ring-1 ring-amber-200',
-      label: 'Approximate match',
-      description: 'Conversational or rapid speech — computer-aligned timing is approximate',
-      isLow: false,
-    };
-  }
-  return {
-    badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-    word: 'bg-emerald-100 text-emerald-950 border-emerald-300 ring-1 ring-emerald-200',
-    label: 'Clear match',
-    description: 'Clear computer-generated audio alignment',
-    isLow: false,
-  };
-}
-
-function renderHighlightedToken(text: string, regex: RegExp | null): React.ReactNode {
-  if (!regex || !text) return text;
-  const parts = text.split(regex);
-  if (parts.length <= 1) return text;
-
-  return parts.map((part, idx) => {
-    // Because buildPhoneticHighlightRegex / buildEnglishHighlightRegex uses a single outer capturing group,
-    // odd indices in split() are the matched substrings!
-    if (idx % 2 === 1) {
-      return (
-        <mark
-          key={idx}
-          className="bg-sky-100 text-sky-950 font-semibold rounded px-0.5 underline decoration-sky-500 decoration-2 underline-offset-2"
-        >
-          {part}
-        </mark>
-      );
-    }
-    return <React.Fragment key={idx}>{part}</React.Fragment>;
-  });
 }
 
 export const PhraseCard: React.FC<PhraseCardProps> = ({
