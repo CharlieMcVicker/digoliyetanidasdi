@@ -263,23 +263,42 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
       return;
     }
 
+    const safePlay = (ws: WaveSurfer, start?: number, end?: number) => {
+      try {
+        let p: Promise<void> | undefined;
+        if (start !== undefined && end !== undefined) {
+          p = ws.play(Math.max(0, start), Math.max(start, end));
+        } else if (start !== undefined) {
+          const target = Math.max(0, start);
+          ws.setTime(target);
+          updateActiveWordFromTime(target);
+          p = ws.play();
+        } else {
+          p = ws.play();
+        }
+        if (p && typeof p.catch === 'function') {
+          p.catch(err => {
+            console.warn('Playback prevented or interrupted:', err);
+            setIsPlaying(false);
+          });
+        }
+      } catch (err) {
+        console.warn('Playback call failed:', err);
+        setIsPlaying(false);
+      }
+    };
+
     if (wavesurferRef.current && isReady) {
       const ws = wavesurferRef.current;
       if (seekToSeconds !== undefined) {
-        if (endSeconds !== undefined) {
-          void ws.play(Math.max(0, seekToSeconds), Math.max(seekToSeconds, endSeconds));
-        } else {
-          ws.setTime(Math.max(0, seekToSeconds));
-          updateActiveWordFromTime(seekToSeconds);
-          void ws.play();
-        }
+        safePlay(ws, seekToSeconds, endSeconds);
       } else if (ws.isPlaying()) {
         ws.pause();
       } else {
         if (ws.getCurrentTime() >= (duration > 0 ? duration - 0.05 : 0)) {
           ws.setTime(0);
         }
-        void ws.play();
+        safePlay(ws);
       }
       return;
     }
@@ -314,19 +333,16 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
         if (pendingPlaybackRef.current !== null) {
           const { start, end } = pendingPlaybackRef.current;
           pendingPlaybackRef.current = null;
-          if (start !== undefined && end !== undefined) {
-            void ws.play(Math.max(0, start), Math.max(start, end));
-          } else if (start !== undefined) {
-            const target = Math.max(0, start);
-            ws.setTime(target);
-            updateActiveWordFromTime(target);
-            void ws.play();
-          } else {
-            void ws.play();
-          }
+          safePlay(ws, start, end);
         } else {
-          void ws.play();
+          safePlay(ws);
         }
+      });
+
+      ws.on('error', (err: unknown) => {
+        console.error('WaveSurfer error on phrase:', phrase.id, err);
+        setIsReady(false);
+        setIsPlaying(false);
       });
 
       ws.on('timeupdate', (t: number) => {
@@ -497,15 +513,23 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? isRemoteAudio
-                      ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
-                      : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
+                    ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
+                    : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
                     : 'Click to play'
                 }
-                className={`inline-block cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-100 ${
+                className={`inline-block cursor-pointer select-none touch-manipulation rounded-md px-1.5 py-0.5 transition-all duration-100 ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold shadow-xs scale-105'
                     : isMatched && wConfStyle
@@ -534,15 +558,23 @@ export const PhraseCard: React.FC<PhraseCardProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? isRemoteAudio
-                      ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
-                      : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
+                    ? `Click to play (${wMeta.start.toFixed(1)}s – ${wMeta.end.toFixed(1)}s)`
+                    : `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s) • Alignment confidence: ${(wMeta.confidence * 100).toFixed(1)}%`
                     : undefined
                 }
-                className={`inline-flex items-center gap-1 cursor-pointer rounded-md px-1.5 py-0.5 transition-all duration-100 ${
+                className={`inline-flex items-center gap-1 cursor-pointer select-none touch-manipulation rounded-md px-1.5 py-0.5 transition-all duration-100 ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold shadow-xs scale-105'
                     : isMatched && wConfStyle

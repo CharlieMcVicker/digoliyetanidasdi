@@ -460,13 +460,21 @@ const ContextPhraseRow: React.FC<ContextPhraseRowProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s)`
                     : 'Click to play word'
                 }
-                className={`inline-block cursor-pointer rounded px-1 py-0.2 transition-colors ${
+                className={`inline-block cursor-pointer select-none touch-manipulation rounded px-1 py-0.2 transition-colors ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold'
                     : isMatched
@@ -496,13 +504,21 @@ const ContextPhraseRow: React.FC<ContextPhraseRowProps> = ({
             <React.Fragment key={idx}>
               <span
                 data-word-idx={idx}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleWordClick(idx)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWordClick(idx);
+                  }
+                }}
                 title={
                   wMeta
                     ? `Click to play word "${wMeta.word}" (${wMeta.start.toFixed(2)}s – ${wMeta.end.toFixed(2)}s)`
                     : 'Click to play word'
                 }
-                className={`inline-block cursor-pointer rounded px-1 py-0.2 transition-colors ${
+                className={`inline-block cursor-pointer select-none touch-manipulation rounded px-1 py-0.2 transition-colors ${
                   isSpeaking
                     ? 'bg-sky-600 text-white font-bold'
                     : isMatched
