@@ -70,6 +70,33 @@ export function computeWordTurnTime(
 }
 
 /**
+ * Calculates the start and end time (in seconds) of a phrase/part inside
+ * its parent turn audio file.
+ */
+export function computePhraseTurnTime(
+  phrase: PhraseRecord
+): { startSec: number; endSec: number } {
+  const startSec =
+    phrase.turn_start_sec !== undefined && phrase.global_start_sec !== undefined
+      ? Math.max(0, phrase.global_start_sec - phrase.turn_start_sec)
+      : 0;
+
+  const rawEnd =
+    phrase.turn_start_sec !== undefined && phrase.global_end_sec !== undefined
+      ? phrase.global_end_sec - phrase.turn_start_sec
+      : phrase.audio_end
+        ? startSec + phrase.audio_end
+        : startSec;
+
+  const endSec = Math.max(startSec + 0.05, rawEnd);
+
+  return {
+    startSec: Number(startSec.toFixed(3)),
+    endSec: Number(endSec.toFixed(3)),
+  };
+}
+
+/**
  * Computes all word intervals for a turn mapped into the turn's audio timeline.
  */
 export function computeTurnWordTimings(turn: TurnRecord): WordTurnTiming[] {

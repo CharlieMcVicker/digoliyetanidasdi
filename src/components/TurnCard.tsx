@@ -18,6 +18,7 @@ import type {
 import {
   buildEnglishHighlightRegex,
   buildPhoneticHighlightRegex,
+  computePhraseTurnTime,
   computeWordTurnTime,
   formatUngroupedSourceLocation,
 } from '../lib/search';
@@ -120,7 +121,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
       setCurrentTimeSec(Math.max(0, turnRelativeTime));
 
-      // Bounded word stop check (for single word clicks)
+      // Bounded stop check (for single-word and play-part playback)
       if (
         stopAtSecondsRef.current !== null &&
         rawTime >= stopAtSecondsRef.current
@@ -500,15 +501,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {(!isMultiPart || isExpanded) &&
           turn.phrases.map((phrase, pIdx) => {
             const isSingle = turn.phrases.length === 1;
+            const { startSec: pStart, endSec: pEnd } =
+              computePhraseTurnTime(phrase);
             const partLabel = isSingle
               ? undefined
               : `Part ${pIdx + 1}/${turn.phrases.length} (${formatTimeRange(
-                  phrase.turn_start_sec !== undefined && phrase.global_start_sec !== undefined
-                    ? phrase.global_start_sec - phrase.turn_start_sec
-                    : 0,
-                  phrase.turn_start_sec !== undefined && phrase.global_end_sec !== undefined
-                    ? phrase.global_end_sec - phrase.turn_start_sec
-                    : phrase.audio_end || 0
+                  pStart,
+                  pEnd
                 )})`;
 
             const sylWords = phrase.syllabary_text.split(/\s+/).filter(Boolean);
@@ -529,11 +528,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const pOffset =
-                          phrase.turn_start_sec !== undefined && phrase.global_start_sec !== undefined
-                            ? Math.max(0, phrase.global_start_sec - phrase.turn_start_sec)
-                            : 0;
-                        playTurnAtOffset(pOffset);
+                        playTurnAtOffset(pStart, pEnd);
                       }}
                       className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-700 hover:text-sky-800 transition cursor-pointer"
                     >
@@ -572,9 +567,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                           title={
                             wMeta
                               ? `Click to seek "${wMeta.word}" (${(
-                                  (phrase.turn_start_sec !== undefined && phrase.global_start_sec !== undefined
-                                    ? phrase.global_start_sec - phrase.turn_start_sec
-                                    : 0) + wMeta.start
+                                  pStart + wMeta.start
                                 ).toFixed(2)}s)`
                               : 'Click to seek word'
                           }
@@ -614,9 +607,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                           title={
                             wMeta
                               ? `Click to seek "${wMeta.word}" (${(
-                                  (phrase.turn_start_sec !== undefined && phrase.global_start_sec !== undefined
-                                    ? phrase.global_start_sec - phrase.turn_start_sec
-                                    : 0) + wMeta.start
+                                  pStart + wMeta.start
                                 ).toFixed(2)}s)`
                               : 'Click to seek word'
                           }

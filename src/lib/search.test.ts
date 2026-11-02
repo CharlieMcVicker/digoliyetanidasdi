@@ -4,6 +4,7 @@ import {
   buildOrderedSourceContextWindow,
   buildPhoneticHighlightRegex,
   buildTurnPartCountsMap,
+  computePhraseTurnTime,
   computeTurnWordTimings,
   computeWordTurnTime,
   createCorpusIndexes,
@@ -568,6 +569,37 @@ describe('Multi-Index Search & Confidence Sorting', () => {
     // 2. Verify word-in-turn timing calculation for live karaoke
     const p01 = multiClausePhrases[2];
     const p02 = multiClausePhrases[3];
+
+    // Verify phrase-in-turn timing bounds for "Play part"
+    const p01Timing = computePhraseTurnTime(p01);
+    expect(p01Timing.startSec).toBeCloseTo(0.060, 2);
+    expect(p01Timing.endSec).toBeCloseTo(4.520, 2);
+
+    const p02Timing = computePhraseTurnTime(p02);
+    expect(p02Timing.startSec).toBeCloseTo(7.320, 2);
+    expect(p02Timing.endSec).toBeCloseTo(12.160, 2);
+
+    // Standalone phrase with audio_end fallback
+    const singlePhraseTiming = computePhraseTurnTime({
+      ...p01,
+      turn_start_sec: undefined,
+      global_start_sec: undefined,
+      global_end_sec: undefined,
+      audio_start: 0,
+      audio_end: 3.5,
+    });
+    expect(singlePhraseTiming.startSec).toBe(0);
+    expect(singlePhraseTiming.endSec).toBe(3.5);
+
+    // Minimum duration buffer enforcement when start == end
+    const zeroDurPhraseTiming = computePhraseTurnTime({
+      ...p01,
+      turn_start_sec: 10.0,
+      global_start_sec: 12.0,
+      global_end_sec: 12.0,
+    });
+    expect(zeroDurPhraseTiming.startSec).toBe(2.0);
+    expect(zeroDurPhraseTiming.endSec).toBe(2.05);
 
     // In p01: offset is 4232.091 - 4232.031 = 0.060s
     const word01Timing = computeWordTurnTime(p01, p01.words[0]);
