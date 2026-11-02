@@ -71,6 +71,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   } | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stopAtSecondsRef = useRef<number | null>(null);
   const isAudioActive = activeAudioId === turn.id;
 
   const isRemoteAudio =
@@ -90,6 +91,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   useEffect(() => {
     if (!isAudioActive && isPlaying && audioRef.current) {
       audioRef.current.pause();
+      stopAtSecondsRef.current = null;
       setIsPlaying(false);
       setActiveWordInfo(null);
     }
@@ -117,6 +119,18 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         : rawTime;
 
       setCurrentTimeSec(Math.max(0, turnRelativeTime));
+
+      // Bounded word stop check (for single word clicks)
+      if (
+        stopAtSecondsRef.current !== null &&
+        rawTime >= stopAtSecondsRef.current
+      ) {
+        audio.pause();
+        stopAtSecondsRef.current = null;
+        setIsPlaying(false);
+        setActiveWordInfo(null);
+        return;
+      }
 
       // Check remote bounds
       if (isRemoteAudio && turnEndSec > turnStartSec && rawTime >= turnEndSec) {
@@ -154,10 +168,18 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     requestAnimationFrame(tick);
   };
 
-  const playTurnAtOffset = (seekSec: number = 0) => {
+  const playTurnAtOffset = (seekSec: number = 0, stopSec?: number) => {
     onActivateAudio(turn.id);
 
     if (!turn.turn_audio_path) return;
+
+    const targetStop =
+      stopSec !== undefined
+        ? isRemoteAudio
+          ? turnStartSec + stopSec
+          : stopSec
+        : null;
+    stopAtSecondsRef.current = targetStop;
 
     const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     const url = isRemoteAudio
@@ -180,6 +202,20 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         startMonitoringLoop(a);
       });
 
+      a.addEventListener('timeupdate', () => {
+        if (!a || a.paused) return;
+        const raw = a.currentTime;
+        if (
+          stopAtSecondsRef.current !== null &&
+          raw >= stopAtSecondsRef.current
+        ) {
+          a.pause();
+          stopAtSecondsRef.current = null;
+          setIsPlaying(false);
+          setActiveWordInfo(null);
+        }
+      });
+
       a.addEventListener('pause', () => {
         setIsPlaying(false);
       });
@@ -188,6 +224,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         setIsPlaying(false);
         setActiveWordInfo(null);
         setCurrentTimeSec(0);
+        stopAtSecondsRef.current = null;
       });
 
       audioRef.current = a;
@@ -208,6 +245,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
   const togglePlayPause = () => {
     if (!turn.turn_audio_path) return;
+
+    stopAtSecondsRef.current = null;
 
     if (audioRef.current) {
       const a = audioRef.current;
@@ -235,8 +274,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const handleWordClick = (phrase: PhraseRecord, wordIdx: number) => {
     const w = phrase.words[wordIdx];
     if (!w) return;
-    const { startSec } = computeWordTurnTime(phrase, w);
-    playTurnAtOffset(startSec);
+    setActiveWordInfo({ phraseId: phrase.id, wordIndex: wordIdx });
+    const { startSec, endSec } = computeWordTurnTime(phrase, w);
+    const boundedEnd = Math.max(startSec + 0.05, endSec);
+    playTurnAtOffset(startSec, boundedEnd);
   };
 
   const handleCycleSpeed = (e: React.MouseEvent) => {
@@ -252,6 +293,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
     setCurrentTimeSec(val);
+    stopAtSecondsRef.current = null;
     playTurnAtOffset(val);
   };
 
