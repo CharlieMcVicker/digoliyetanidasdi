@@ -6,14 +6,15 @@ Parallelized across CPU cores.
 
 import os
 import sys
+import argparse
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import time
 
 def convert_wav(args):
-    src, dst = args
-    if os.path.exists(dst) and os.path.getsize(dst) > 0:
+    src, dst, force = args
+    if not force and os.path.exists(dst) and os.path.getsize(dst) > 0 and os.path.getmtime(dst) >= os.path.getmtime(src):
         return True, 0
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     cmd = [
@@ -29,7 +30,7 @@ def convert_wav(args):
         return True, os.path.getsize(dst)
     return False, 0
 
-def collect_tasks(src_dir, dst_dir):
+def collect_tasks(src_dir, dst_dir, force=False):
     tasks = []
     src_path = Path(src_dir)
     dst_path = Path(dst_dir)
@@ -39,29 +40,41 @@ def collect_tasks(src_dir, dst_dir):
                 s = Path(root) / f
                 rel = s.relative_to(src_path)
                 d = (dst_path / rel).with_suffix('.mp3')
-                tasks.append((str(s), str(d)))
+                tasks.append((str(s), str(d), force))
     return tasks
 
 def main():
-    mappings = [
-        ('/Users/julietmcvicker/code/workshop-transcription/data/training/processed/sentence_audio', 'audio_mp3/sentence_audio'),
-        ('/Users/julietmcvicker/code/workshop-transcription/data/projects/cherokee_new_testament/split_audio', 'audio_mp3/split_audio'),
-        ('data/saving-the-voices/split_audio', 'audio_mp3/stv_audio'),
-        ('data/saving-the-voices/turn_audio', 'audio_mp3/stv_turn_audio'),
-    ]
+    parser = argparse.ArgumentParser(description="Convert corpus WAVs to speech-optimized MP3s")
+    parser.add_argument("--force", action="store_true", help="Re-encode all files regardless of timestamps")
+    parser.add_argument("--target", choices=["all", "split_audio", "stv", "sentence"], default="all", help="Target corpus subset")
+    args = parser.parse_args()
+
+    all_mappings = {
+        'sentence': [('/Users/julietmcvicker/code/workshop-transcription/data/training/processed/sentence_audio', 'audio_mp3/sentence_audio')],
+        'split_audio': [('/Users/julietmcvicker/code/workshop-transcription/data/projects/cherokee_new_testament/split_audio', 'audio_mp3/split_audio')],
+        'stv': [
+            ('data/saving-the-voices/split_audio', 'audio_mp3/stv_audio'),
+            ('data/saving-the-voices/turn_audio', 'audio_mp3/stv_turn_audio'),
+        ],
+    }
+
+    if args.target == "all":
+        mappings = [m for sublist in all_mappings.values() for m in sublist]
+    else:
+        mappings = all_mappings[args.target]
 
     all_tasks = []
     for src, dst in mappings:
-        t = collect_tasks(src, dst)
+        t = collect_tasks(src, dst, force=args.force)
         print(f"Collected {len(t)} tasks from {src} -> {dst}")
         all_tasks.extend(t)
 
-    print(f"Total files to convert: {len(all_tasks)}")
+    print(f"Total files in queue: {len(all_tasks)}")
     t0 = time.time()
     total_size = 0
     completed = 0
     workers = min(os.cpu_count() or 4, 12)
-    print(f"Starting conversion with {workers} parallel processes...")
+    print(f"Starting conversion with {workers} parallel processes (force={args.force})...")
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
         for ok, size in executor.map(convert_wav, all_tasks, chunksize=20):
@@ -73,7 +86,7 @@ def main():
                 rate = completed / elapsed if elapsed > 0 else 0
                 print(f"Progress: {completed}/{len(all_tasks)} ({completed/len(all_tasks)*100:.1f}%) in {elapsed:.1f}s ({rate:.1f} files/sec)")
 
-    print(f"Done! Converted {completed} files. Total MP3 size: {total_size / (1024*1024):.1f} MB in {time.time()-t0:.1f}s")
+    print(f"Done! Processed {completed} files. Newly encoded size: {total_size / (1024*1024):.1f} MB in {time.time()-t0:.1f}s")
 
 if __name__ == '__main__':
     main()

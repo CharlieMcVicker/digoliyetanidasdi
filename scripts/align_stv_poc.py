@@ -284,17 +284,22 @@ def align_interview(
         urllib.request.urlretrieve(remote_url, str(mp3_path))
     timing_stats["download_audio_sec"] = round(time.time() - t0, 3)
 
-    # Step 2: Load and Decode 16kHz Mono Audio
-    t0 = time.time()
-    logger.info("Decoding audio to 16kHz mono: %s...", mp3_path)
-    full_audio = (
-        AudioSegment.from_file(str(mp3_path))
-        .set_frame_rate(16000)
-        .set_channels(1)
-    )
-    full_audio_dur_sec = len(full_audio) / 1000.0
-    logger.info("Loaded %.2fs of audio.", full_audio_dur_sec)
-    timing_stats["decode_audio_sec"] = round(time.time() - t0, 3)
+    # Step 2: Lazy Loader for 16kHz Mono Audio (only decoded if turn WAVs are missing)
+    full_audio: Optional[AudioSegment] = None
+
+    def get_full_audio() -> AudioSegment:
+        nonlocal full_audio
+        if full_audio is None:
+            t_dec = time.time()
+            logger.info("Decoding audio to 16kHz mono: %s...", mp3_path)
+            full_audio = (
+                AudioSegment.from_file(str(mp3_path))
+                .set_frame_rate(16000)
+                .set_channels(1)
+            )
+            timing_stats["decode_audio_sec"] = round(time.time() - t_dec, 3)
+            logger.info("Loaded %.2fs of audio.", len(full_audio) / 1000.0)
+        return full_audio
 
     # Step 3: Load Transcript Segments
     t0 = time.time()
@@ -378,8 +383,10 @@ def align_interview(
 
         # Pre-slice turn WAV (16kHz mono)
         turn_wav_path = interview_turn_dir / f"{seg_id}.wav"
-        turn_audio = full_audio[start_ms:end_ms]
-        if not turn_wav_path.exists():
+        if turn_wav_path.exists():
+            turn_audio = AudioSegment.from_file(str(turn_wav_path))
+        else:
+            turn_audio = get_full_audio()[start_ms:end_ms]
             turn_audio.export(str(turn_wav_path), format="wav")
 
         # Build TextChunks for this turn
@@ -637,6 +644,12 @@ def main():
 
     if args.batch or args.interviews:
         target_nums = args.interviews or ["0005", "0015", "0067", "0002"]
+        if target_nums == ["all"]:
+            target_nums = [
+                "0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008",
+                "0009", "0010", "0011", "0012", "0014", "0015", "0019", "0022",
+                "0051", "0059", "0064", "0067", "0076", "0088",
+            ]
         col_path = DATA_DIR / "saving-the-voices.json"
         with open(col_path, "r", encoding="utf-8") as f:
             col_data = json.load(f)

@@ -61,6 +61,7 @@ PRE_BIBLE_MODEL_REVISION = "76e62140955f4738abdab345ea34068b02d8d2a2"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = REPO_ROOT / "public"
 DATA_OUT_DIR = PUBLIC_DIR / "data"
+AUDIO_MP3_DIR = REPO_ROOT / "audio_mp3"
 
 SENTENCE_CSV_PATH = WORKSHOP_DIR / "data/training/processed/sentence_audio.csv"
 SENTENCE_AUDIO_DIR = WORKSHOP_DIR / "data/training/processed/sentence_audio"
@@ -68,15 +69,13 @@ BIBLE_RECORDS_PATH = (
     WORKSHOP_DIR
     / "data/projects/cherokee_new_testament/alignments/bible_alignment_records.json"
 )
-BIBLE_SPLIT_AUDIO_DIR = (
-    WORKSHOP_DIR / "data/projects/cherokee_new_testament/split_audio"
-)
+BIBLE_SPLIT_AUDIO_DIR = AUDIO_MP3_DIR / "split_audio"
 CTC_CACHE_DIR = WORKSHOP_DIR / ".cache/ctc_emissions"
 STV_DIR = REPO_ROOT / "data/saving-the-voices"
 STV_COLLECTION_JSON = STV_DIR / "saving-the-voices.json"
 STV_TRANSCRIPTS_DIR = STV_DIR / "transcripts"
-STV_SPLIT_AUDIO_DIR = STV_DIR / "split_audio"
-STV_TURN_AUDIO_DIR = STV_DIR / "turn_audio"
+STV_SPLIT_AUDIO_DIR = AUDIO_MP3_DIR / "stv_audio"
+STV_TURN_AUDIO_DIR = AUDIO_MP3_DIR / "stv_turn_audio"
 STV_ALIGNMENTS_DIR = STV_DIR / "alignments"
 KIWA_BASE_URL = "https://cherokee-language-hub.kiwadigital.com"
 
@@ -912,7 +911,7 @@ def ensure_audio_symlinks() -> None:
     STV_SPLIT_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     STV_TURN_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     links = [
-        (PUBLIC_DIR / "sentence_audio", SENTENCE_AUDIO_DIR),
+        (PUBLIC_DIR / "sentence_audio", AUDIO_MP3_DIR / "sentence_audio"),
         (PUBLIC_DIR / "split_audio", BIBLE_SPLIT_AUDIO_DIR),
         (PUBLIC_DIR / "stv_audio", STV_SPLIT_AUDIO_DIR),
         (PUBLIC_DIR / "stv_turn_audio", STV_TURN_AUDIO_DIR),
