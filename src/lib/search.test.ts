@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCorpusTurns,
   buildOrderedSourceContextWindow,
   buildPhoneticHighlightRegex,
   buildTurnPartCountsMap,
+  computeTurnWordTimings,
+  computeWordTurnTime,
   createCorpusIndexes,
   flattenAndSortMatches,
+  flattenAndSortTurnMatches,
   formatUngroupedSourceLocation,
   normalizeDGQueryToTTH,
   normalizeTTHQuery,
@@ -476,5 +480,150 @@ describe('Multi-Index Search & Confidence Sorting', () => {
       3
     );
     expect(dictWindow).toBeNull();
+  });
+
+  it('builds canonical TurnRecords, maps word timings into turn timeline, and searches English by whole turns without duplicate subchunk cards', () => {
+    const multiClausePhrases: PhraseRecord[] = [
+      {
+        ...mockPhrases[0],
+        id: 'dict_ex_1',
+        source_id: 'dict_feeling_1975',
+        english_text: 'The boys are playing ball.',
+      },
+      {
+        ...mockPhrases[2],
+        id: 'nt_mar_01_001',
+        source_id: 'nt_mar_01',
+        english_text: 'The beginning of the gospel of Jesus Christ.',
+      },
+      {
+        id: 'stv_0010_mary_mccoy_seg-384_p01',
+        source_id: 'stv_0010_mary_mccoy',
+        loc_label: 'Seg 384.1 (1:10:32) • Charlie Shell',
+        loc_index: 38401,
+        turn_id: 'seg-384',
+        phrase_index: 1,
+        speaker_label: 'Charlie Shell',
+        turn_audio_path: 'stv_turn_audio/stv_0010_mary_mccoy/seg-384.mp3',
+        turn_start_sec: 4232.031,
+        turn_end_sec: 4258.745,
+        global_start_sec: 4232.091,
+        global_end_sec: 4236.551,
+        phonetic_text: 'nowu sanale titla',
+        phonetic_broad: 'nowu sanale titla',
+        syllabary_text: 'ᏃᏭ ᏌᎾᎴ ᏗᏜ',
+        english_text: 'Towards the morning, he was saying let me go. I am really thankful you talked with us.',
+        audio_path: 'stv_audio/stv_0010_mary_mccoy/seg-384_p01.mp3',
+        audio_start: 0,
+        audio_end: 4.46,
+        mean_confidence: 0.85,
+        min_confidence: 0.70,
+        has_anomalies: false,
+        words: [
+          { word: 'nowu', start: 0.1, end: 0.5, confidence: 0.85, flagged: false },
+          { word: 'sanale', start: 0.6, end: 1.2, confidence: 0.90, flagged: false },
+        ],
+      },
+      {
+        id: 'stv_0010_mary_mccoy_seg-384_p02',
+        source_id: 'stv_0010_mary_mccoy',
+        loc_label: 'Seg 384.2 (1:10:39) • Charlie Shell',
+        loc_index: 38402,
+        turn_id: 'seg-384',
+        phrase_index: 2,
+        speaker_label: 'Charlie Shell',
+        turn_audio_path: 'stv_turn_audio/stv_0010_mary_mccoy/seg-384.mp3',
+        turn_start_sec: 4232.031,
+        turn_end_sec: 4258.745,
+        global_start_sec: 4239.351,
+        global_end_sec: 4244.191,
+        phonetic_text: 'tsulohsilot ke nowu kvli’elika',
+        phonetic_broad: 'tsulohsilot ke nowu kvlielika',
+        syllabary_text: 'ᏧᎶᏏᎶᏓ Ꭸ ᏃᏭ ᎬᎵᎡᎵᎦ',
+        english_text: 'Towards the morning, he was saying let me go. I am really thankful you talked with us.',
+        audio_path: 'stv_audio/stv_0010_mary_mccoy/seg-384_p02.mp3',
+        audio_start: 0,
+        audio_end: 4.84,
+        mean_confidence: 0.92,
+        min_confidence: 0.88,
+        has_anomalies: false,
+        words: [
+          { word: 'tsulohsilot', start: 0.1, end: 1.0, confidence: 0.95, flagged: false },
+          { word: 'ke', start: 1.1, end: 1.3, confidence: 0.89, flagged: false },
+        ],
+      },
+    ];
+
+    // 1. Verify buildCorpusTurns groups multi-part STV phrases into 1 turn
+    const turnsMap = buildCorpusTurns(multiClausePhrases);
+    expect(turnsMap.size).toBe(3); // 1 dict, 1 NT, 1 STV turn (combining p01 and p02)
+
+    const stvTurn = turnsMap.get('stv_0010_mary_mccoy::seg-384');
+    expect(stvTurn).toBeDefined();
+    expect(stvTurn?.turn_id).toBe('seg-384');
+    expect(stvTurn?.phrases).toHaveLength(2);
+    expect(stvTurn?.duration_sec).toBeCloseTo(26.714, 2);
+    expect(stvTurn?.syllabary_text).toBe('ᏃᏭ ᏌᎾᎴ ᏗᏜ ᏧᎶᏏᎶᏓ Ꭸ ᏃᏭ ᎬᎵᎡᎵᎦ');
+
+    // 2. Verify word-in-turn timing calculation for live karaoke
+    const p01 = multiClausePhrases[2];
+    const p02 = multiClausePhrases[3];
+
+    // In p01: offset is 4232.091 - 4232.031 = 0.060s
+    const word01Timing = computeWordTurnTime(p01, p01.words[0]);
+    expect(word01Timing.startSec).toBeCloseTo(0.160, 2);
+    expect(word01Timing.endSec).toBeCloseTo(0.560, 2);
+
+    // In p02: offset is 4239.351 - 4232.031 = 7.320s
+    const word02Timing = computeWordTurnTime(p02, p02.words[0]);
+    expect(word02Timing.startSec).toBeCloseTo(7.420, 2);
+    expect(word02Timing.endSec).toBeCloseTo(8.320, 2);
+
+    // All word timings in the turn
+    const allTimings = computeTurnWordTimings(stvTurn!);
+    expect(allTimings).toHaveLength(4);
+    expect(allTimings[2].word).toBe('tsulohsilot');
+    expect(allTimings[2].startSec).toBeCloseTo(7.420, 2);
+
+    // 3. Verify English index and searchCorpus returns whole turn, not duplicate subchunks
+    const testIndexes = createCorpusIndexes(multiClausePhrases, turnsMap);
+    const pMap = new Map(multiClausePhrases.map(p => [p.id, p]));
+    const sMap = new Map([
+      ...mockSources.map(s => [s.source_id, s] as [string, DocumentMeta]),
+      [
+        'stv_0010_mary_mccoy',
+        {
+          source_id: 'stv_0010_mary_mccoy',
+          source_type: 'marked_syllabary_corpus',
+          title: 'Saving the Voices: Mary McCoy (ᎺᎵ ᎹᎦᏱ)',
+          sort_order: 2010,
+        } as DocumentMeta,
+      ],
+    ]);
+
+    const results = searchCorpus(
+      'thankful talked',
+      'english',
+      testIndexes,
+      pMap,
+      sMap
+    );
+
+    // Exactly 1 source matched
+    expect(results).toHaveLength(1);
+    expect(results[0].source.source_id).toBe('stv_0010_mary_mccoy');
+
+    // Exactly 1 turn match (NOT two separate duplicate cards for p01 and p02!)
+    expect(results[0].turnMatches).toHaveLength(1);
+    const matchedTurn = results[0].turnMatches![0];
+    expect(matchedTurn.turn_id).toBe('seg-384');
+    expect(matchedTurn.phrases).toHaveLength(2);
+    expect(matchedTurn.matchType).toBe('english');
+    expect(matchedTurn.english_text).toContain('thankful you talked with us');
+
+    // 4. Verify flattenAndSortTurnMatches
+    const flatTurns = flattenAndSortTurnMatches(results, 'matched_confidence', sMap);
+    expect(flatTurns).toHaveLength(1);
+    expect(flatTurns[0].id).toBe('stv_0010_mary_mccoy::seg-384');
   });
 });

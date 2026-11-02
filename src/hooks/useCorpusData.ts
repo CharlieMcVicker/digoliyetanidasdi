@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { DocumentMeta, PhraseRecord } from '../types/corpus';
+import type { DocumentMeta, PhraseRecord, TurnRecord } from '../types/corpus';
 import {
   buildTurnPartCountsMap,
   createCorpusIndexes,
@@ -21,6 +21,7 @@ export interface UseCorpusDataResult {
   indexes: CorpusIndexes | null;
   phrasesMap: Map<string, PhraseRecord>;
   sourcesMap: Map<string, DocumentMeta>;
+  turnsMap: Map<string, TurnRecord>;
   turnPartCountsMap: Map<string, { turnId: string; phraseIndex: number; turnPhraseCount: number }>;
   corpusStats: CorpusStats;
 }
@@ -29,6 +30,7 @@ const EMPTY_INDEXES: CorpusIndexes = {
   strictPhoneticIndex: null as any,
   broadPhoneticIndex: null as any,
   englishIndex: null as any,
+  turnsMap: new Map(),
 };
 
 export function useCorpusData(): UseCorpusDataResult {
@@ -105,6 +107,7 @@ export function useCorpusData(): UseCorpusDataResult {
       indexes: idxs,
       phrasesMap: pMap,
       sourcesMap: sMap,
+      turnsMap: idxs.turnsMap,
       turnPartCountsMap: tPartsMap,
       corpusStats: {
         totalPhrases: phrases.length,
@@ -125,6 +128,7 @@ export function useCorpusData(): UseCorpusDataResult {
     indexes: derived.indexes,
     phrasesMap: derived.phrasesMap,
     sourcesMap: derived.sourcesMap,
+    turnsMap: derived.turnsMap,
     turnPartCountsMap: derived.turnPartCountsMap,
     corpusStats: derived.corpusStats,
   };

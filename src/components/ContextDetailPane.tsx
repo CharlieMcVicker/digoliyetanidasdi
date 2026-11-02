@@ -13,11 +13,11 @@ import type {
   ScoredPhraseMatch,
   SearchMode,
   TurnContainerModel,
+  TurnRecord,
 } from '../types/corpus';
 import { buildOrderedSourceContextWindow } from '../lib/search';
-import { formatTimeRange } from '../lib/format';
-import { FullTurnAudioButton } from './context/FullTurnAudioButton';
 import { ContextPhraseRow } from './context/ContextPhraseRow';
+import { TurnCard } from './TurnCard';
 
 export interface ContextDetailPaneProps {
   targetPhrase: PhraseRecord;
@@ -41,7 +41,6 @@ export const ContextDetailPane: React.FC<ContextDetailPaneProps> = ({
   source,
   allPhrases,
   scoredMatchesMap,
-  turnPartCountsMap,
   query,
   mode,
   activeAudioPhraseId,
@@ -218,91 +217,47 @@ export const ContextDetailPane: React.FC<ContextDetailPaneProps> = ({
 
           {/* Saving the Voices Interview Turns */}
           {contextWindow.kind === 'marked_syllabary_corpus' &&
-            contextWindow.turns.map((turn: TurnContainerModel) => {
-              const isMultiPart = turn.phrases.length > 1;
-              const turnNumMatch = turn.turnId.match(/(\d+)/);
-              const turnLabel = turnNumMatch
-                ? `Turn ${parseInt(turnNumMatch[1], 10)}`
-                : turn.turnId;
+            contextWindow.turns.map((t: TurnContainerModel) => {
+              const turnRecord: TurnRecord = {
+                id: `${source.source_id}::${t.turnId}`,
+                turn_id: t.turnId,
+                source_id: source.source_id,
+                speaker_label: t.speakerLabel,
+                loc_label: `Turn ${t.turnId.replace('seg-', '')}`,
+                loc_index: t.phrases[0]?.loc_index ?? 0,
+                english_text: t.englishText,
+                turn_audio_path: t.turnAudioPath,
+                turn_start_sec: t.turnStartSec,
+                turn_end_sec: t.turnEndSec,
+                duration_sec: Math.max(0, t.turnEndSec - t.turnStartSec),
+                mean_confidence:
+                  t.phrases.reduce((acc, p) => acc + (p.mean_confidence || 0), 0) /
+                  (t.phrases.length || 1),
+                has_anomalies: t.phrases.some(p => p.has_anomalies),
+                phrases: t.phrases,
+                syllabary_text: t.phrases.map(p => p.syllabary_text).join(' '),
+                phonetic_text: t.phrases.map(p => p.phonetic_text).join(' '),
+                phonetic_broad: t.phrases.map(p => p.phonetic_broad).join(' '),
+              };
 
               return (
                 <div
-                  key={turn.turnId}
-                  className="py-3.5 first:pt-1 last:pb-1"
+                  key={t.turnId}
+                  id={`context-turn-${t.turnId}`}
+                  className="py-2.5 first:pt-1 last:pb-1"
                 >
-                  {/* Turn Header Bar */}
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-800">
-                        {turnLabel} • {turn.speakerLabel}
-                      </span>
-                      <span className="font-mono text-xs text-slate-400">
-                        ({formatTimeRange(turn.turnStartSec, turn.turnEndSec)})
-                      </span>
-                    </div>
-
-                    {isMultiPart && turn.turnAudioPath && (
-                      <FullTurnAudioButton
-                        turnId={`${source.source_id}-${turn.turnId}`}
-                        audioPath={turn.turnAudioPath}
-                        startSec={turn.turnStartSec}
-                        endSec={turn.turnEndSec}
-                        activeAudioId={activeAudioPhraseId}
-                        onActivateAudio={onActivateAudio}
-                      />
-                    )}
-                  </div>
-
-                  {/* Cherokee Sub-Chunks separated by subtle HRs */}
-                  <div className="divide-y divide-slate-100">
-                    {turn.phrases.map((subPhrase, idx) => {
-                      const scored =
-                        scoredMatchesMap.get(subPhrase.id) ?? subPhrase;
-                      const isTarget = subPhrase.id === targetPhrase.id;
-                      const partInfo = turnPartCountsMap.get(subPhrase.id) ?? {
-                        turnId: turn.turnId,
-                        phraseIndex: idx + 1,
-                        turnPhraseCount: turn.phrases.length,
-                      };
-                      const timeLabel = subPhrase.loc_label
-                        .split('•')[0]
-                        .trim();
-                      const partLabel = isMultiPart
-                        ? `Part ${partInfo.phraseIndex}/${partInfo.turnPhraseCount} • ${timeLabel}`
-                        : timeLabel;
-
-                      return (
-                        <div
-                          key={subPhrase.id}
-                          id={
-                            isTarget
-                              ? `context-target-${subPhrase.id}`
-                              : undefined
-                          }
-                        >
-                          <ContextPhraseRow
-                            phrase={scored}
-                            partLabel={partLabel}
-                            showEnglishAtBottom={false}
-                            isContextTarget={isTarget}
-                            query={query}
-                            mode={mode}
-                            isActiveAudio={
-                              activeAudioPhraseId === subPhrase.id
-                            }
-                            onActivateAudio={onActivateAudio}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Full Turn English Translation at the bottom */}
-                  {turn.englishText && (
-                    <div className="mt-2 pt-2 border-t border-slate-100 text-xs sm:text-sm text-slate-600 italic leading-relaxed">
-                      {turn.englishText}
-                    </div>
-                  )}
+                  <TurnCard
+                    turn={turnRecord}
+                    source={source}
+                    showSourceBadge={false}
+                    isContextTarget={t.isTargetTurn}
+                    query={query}
+                    mode={mode}
+                    activeAudioId={activeAudioPhraseId}
+                    onActivateAudio={onActivateAudio}
+                    variant="context-drawer"
+                    defaultExpanded={true}
+                  />
                 </div>
               );
             })}

@@ -5,9 +5,11 @@ import type {
   GroupedSearchResult,
   PhraseRecord,
   ScoredPhraseMatch,
+  ScoredTurnMatch,
   SearchMode,
 } from '../types/corpus';
 import { PhraseCard } from './PhraseCard';
+import { TurnCard } from './TurnCard';
 
 export interface SearchResultsViewProps {
   committedQuery: string;
@@ -15,6 +17,7 @@ export interface SearchResultsViewProps {
   groupBySource: boolean;
   groupedResults: GroupedSearchResult[];
   flatResults: ScoredPhraseMatch[];
+  flatTurnResults?: ScoredTurnMatch[];
   sourcesMap: Map<string, DocumentMeta>;
   turnPartCountsMap: Map<string, { turnId: string; phraseIndex: number; turnPhraseCount: number }>;
   activeAudioPhraseId: string | null;
@@ -29,6 +32,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
   groupBySource,
   groupedResults,
   flatResults,
+  flatTurnResults = [],
   sourcesMap,
   turnPartCountsMap,
   activeAudioPhraseId,
@@ -44,6 +48,8 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
       [sourceId]: !prev[sourceId],
     }));
   };
+
+  const isEnglishMode = committedMode === 'english';
 
   if (committedQuery.trim() && groupedResults.length === 0) {
     return (
@@ -64,6 +70,17 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
       {groupBySource ? (
         groupedResults.map(group => {
           const isCollapsed = Boolean(collapsedGroups[group.source.source_id]);
+          const itemCount = isEnglishMode
+            ? group.turnMatches?.length ?? 0
+            : group.matches.length;
+          const itemNoun = isEnglishMode
+            ? itemCount === 1
+              ? 'turn'
+              : 'turns'
+            : itemCount === 1
+              ? 'recording'
+              : 'recordings';
+
           return (
             <section
               key={group.source.source_id}
@@ -84,8 +101,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                     {group.source.title}
                   </h2>
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200">
-                    {group.matches.length}{' '}
-                    {group.matches.length === 1 ? 'recording' : 'recordings'}
+                    {itemCount} {itemNoun}
                   </span>
                 </div>
 
@@ -100,21 +116,35 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
 
               {!isCollapsed && (
                 <div className="p-4 space-y-3">
-                  {group.matches.map(match => (
-                    <PhraseCard
-                      key={match.id}
-                      phrase={match}
-                      source={group.source}
-                      showSourceBadge={false}
-                      turnPartInfo={turnPartCountsMap.get(match.id)}
-                      isContextTarget={contextPhrase?.id === match.id}
-                      onViewInContext={onViewInContext}
-                      query={committedQuery}
-                      mode={committedMode}
-                      isActiveAudio={activeAudioPhraseId === match.id}
-                      onActivateAudio={onActivateAudio}
-                    />
-                  ))}
+                  {isEnglishMode && group.turnMatches
+                    ? group.turnMatches.map(turn => (
+                        <TurnCard
+                          key={turn.id}
+                          turn={turn}
+                          source={group.source}
+                          showSourceBadge={false}
+                          onViewInContext={onViewInContext}
+                          query={committedQuery}
+                          mode={committedMode}
+                          activeAudioId={activeAudioPhraseId}
+                          onActivateAudio={onActivateAudio}
+                        />
+                      ))
+                    : group.matches.map(match => (
+                        <PhraseCard
+                          key={match.id}
+                          phrase={match}
+                          source={group.source}
+                          showSourceBadge={false}
+                          turnPartInfo={turnPartCountsMap.get(match.id)}
+                          isContextTarget={contextPhrase?.id === match.id}
+                          onViewInContext={onViewInContext}
+                          query={committedQuery}
+                          mode={committedMode}
+                          isActiveAudio={activeAudioPhraseId === match.id}
+                          onActivateAudio={onActivateAudio}
+                        />
+                      ))}
                 </div>
               )}
             </section>
@@ -122,24 +152,41 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
         })
       ) : (
         <div className="space-y-3">
-          {flatResults.map(match => {
-            const src = sourcesMap.get(match.source_id);
-            return (
-              <PhraseCard
-                key={match.id}
-                phrase={match}
-                source={src}
-                showSourceBadge={true}
-                turnPartInfo={turnPartCountsMap.get(match.id)}
-                isContextTarget={contextPhrase?.id === match.id}
-                onViewInContext={onViewInContext}
-                query={committedQuery}
-                mode={committedMode}
-                isActiveAudio={activeAudioPhraseId === match.id}
-                onActivateAudio={onActivateAudio}
-              />
-            );
-          })}
+          {isEnglishMode && flatTurnResults.length > 0
+            ? flatTurnResults.map(turn => {
+                const src = sourcesMap.get(turn.source_id);
+                return (
+                  <TurnCard
+                    key={turn.id}
+                    turn={turn}
+                    source={src}
+                    showSourceBadge={true}
+                    onViewInContext={onViewInContext}
+                    query={committedQuery}
+                    mode={committedMode}
+                    activeAudioId={activeAudioPhraseId}
+                    onActivateAudio={onActivateAudio}
+                  />
+                );
+              })
+            : flatResults.map(match => {
+                const src = sourcesMap.get(match.source_id);
+                return (
+                  <PhraseCard
+                    key={match.id}
+                    phrase={match}
+                    source={src}
+                    showSourceBadge={true}
+                    turnPartInfo={turnPartCountsMap.get(match.id)}
+                    isContextTarget={contextPhrase?.id === match.id}
+                    onViewInContext={onViewInContext}
+                    query={committedQuery}
+                    mode={committedMode}
+                    isActiveAudio={activeAudioPhraseId === match.id}
+                    onActivateAudio={onActivateAudio}
+                  />
+                );
+              })}
         </div>
       )}
     </div>

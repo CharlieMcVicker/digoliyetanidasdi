@@ -3,12 +3,14 @@ import type {
   DocumentMeta,
   PhraseRecord,
   ScoredPhraseMatch,
+  ScoredTurnMatch,
   SearchMode,
   SortOption,
   SourceType,
 } from '../types/corpus';
 import {
   flattenAndSortMatches,
+  flattenAndSortTurnMatches,
   searchCorpus,
   type CorpusIndexes,
 } from '../lib/search';
@@ -138,13 +140,23 @@ export function useCorpusSearch({
     selectedSourceId,
   ]);
 
-  const totalMatches = useMemo(
-    () => groupedResults.reduce((acc, g) => acc + g.matches.length, 0),
-    [groupedResults]
-  );
+  const totalMatches = useMemo(() => {
+    if (committedMode === 'english') {
+      return groupedResults.reduce(
+        (acc, g) => acc + (g.turnMatches?.length ?? 0),
+        0
+      );
+    }
+    return groupedResults.reduce((acc, g) => acc + g.matches.length, 0);
+  }, [groupedResults, committedMode]);
 
   const flatResults = useMemo(
     () => flattenAndSortMatches(groupedResults, sortBy, sourcesMap),
+    [groupedResults, sortBy, sourcesMap]
+  );
+
+  const flatTurnResults: ScoredTurnMatch[] = useMemo(
+    () => flattenAndSortTurnMatches(groupedResults, sortBy, sourcesMap),
     [groupedResults, sortBy, sourcesMap]
   );
 
@@ -185,6 +197,7 @@ export function useCorpusSearch({
     activeFilterCount,
     groupedResults,
     flatResults,
+    flatTurnResults,
     totalMatches,
     scoredMatchesMap,
   };

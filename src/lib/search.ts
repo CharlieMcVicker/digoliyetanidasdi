@@ -11,9 +11,11 @@ import type {
   GroupedSearchResult,
   PhraseRecord,
   ScoredPhraseMatch,
+  ScoredTurnMatch,
   SearchFilterOptions,
   SearchMode,
   SortOption,
+  TurnRecord,
 } from '../types/corpus';
 import {
   normalizeDGQueryToTTH,
@@ -21,6 +23,7 @@ import {
   phoneticNgramTokenizer,
   toBroadTTH,
 } from './phonetics';
+import { buildCorpusTurns } from './context';
 
 // Re-export pure domain modules for full backwards compatibility
 export * from './phonetics';
@@ -30,13 +33,17 @@ export * from './highlight';
 export interface CorpusIndexes {
   strictPhoneticIndex: MiniSearch<PhraseRecord>;
   broadPhoneticIndex: MiniSearch<PhraseRecord>;
-  englishIndex: MiniSearch<PhraseRecord>;
+  englishIndex: MiniSearch<TurnRecord>;
+  turnsMap: Map<string, TurnRecord>;
 }
 
 /**
  * Initializes the three MiniSearch indexes (Strict Phonetic, Broad Phonetic, English).
  */
-export function createCorpusIndexes(phrases: PhraseRecord[]): CorpusIndexes {
+export function createCorpusIndexes(
+  phrases: PhraseRecord[],
+  turnsMapInput?: Map<string, TurnRecord>
+): CorpusIndexes {
   const strictPhoneticIndex = new MiniSearch<PhraseRecord>({
     fields: ['phonetic_text'],
     storeFields: ['id'],
@@ -51,7 +58,9 @@ export function createCorpusIndexes(phrases: PhraseRecord[]): CorpusIndexes {
     searchOptions: { combineWith: 'AND', prefix: false },
   });
 
-  const englishIndex = new MiniSearch<PhraseRecord>({
+  const turnsMap = turnsMapInput ?? buildCorpusTurns(phrases);
+
+  const englishIndex = new MiniSearch<TurnRecord>({
     fields: ['english_text'],
     storeFields: ['id'],
     searchOptions: { combineWith: 'AND', prefix: true, fuzzy: 0.2 },
@@ -59,9 +68,11 @@ export function createCorpusIndexes(phrases: PhraseRecord[]): CorpusIndexes {
 
   strictPhoneticIndex.addAll(phrases);
   broadPhoneticIndex.addAll(phrases);
-  englishIndex.addAll(phrases.filter(p => Boolean(p.english_text)));
+  englishIndex.addAll(
+    Array.from(turnsMap.values()).filter(t => Boolean(t.english_text))
+  );
 
-  return { strictPhoneticIndex, broadPhoneticIndex, englishIndex };
+  return { strictPhoneticIndex, broadPhoneticIndex, englishIndex, turnsMap };
 }
 
 /**
@@ -156,20 +167,31 @@ export function searchCorpus(
     return true;
   };
 
+  const passesTurnFilters = (turn: TurnRecord): boolean => {
+    if (hideAnomalies && turn.has_anomalies) return false;
+    if (minConfidence > 0 && turn.mean_confidence < minConfidence) return false;
+    if (filterSourceId !== 'all' && turn.source_id !== filterSourceId) return false;
+    if (filterSourceType !== 'all') {
+      const src = sourcesMap.get(turn.source_id);
+      if (!src || src.source_type !== filterSourceType) return false;
+    }
+    return true;
+  };
+
   const resultsMap = new Map<string, ScoredPhraseMatch>();
+  const turnResultsMap = new Map<string, ScoredTurnMatch>();
 
   if (mode === 'english') {
     const englishHits = indexes.englishIndex.search(trimmed);
     for (const hit of englishHits) {
-      const rec = phrasesMap.get(hit.id);
-      if (!rec) continue;
-      if (!passesPhraseFilters(rec)) continue;
-      resultsMap.set(rec.id, {
-        ...rec,
+      const turn = indexes.turnsMap.get(hit.id);
+      if (!turn) continue;
+      if (!passesTurnFilters(turn)) continue;
+      turnResultsMap.set(turn.id, {
+        ...turn,
         matchType: 'english',
         score: hit.score * 1.5,
-        matchedWordIndices: [],
-        matchedConfidence: rec.mean_confidence,
+        matchedConfidence: turn.mean_confidence,
       });
     }
   } else {
@@ -250,19 +272,54 @@ export function searchCorpus(
   }
 
   // Group by source
-  const groupedMap = new Map<string, ScoredPhraseMatch[]>();
-  for (const match of resultsMap.values()) {
-    const list = groupedMap.get(match.source_id);
-    if (list) {
-      list.push(match);
-    } else {
-      groupedMap.set(match.source_id, [match]);
+  const groupedPhraseMap = new Map<string, ScoredPhraseMatch[]>();
+  const groupedTurnMap = new Map<string, ScoredTurnMatch[]>();
+
+  if (mode === 'english') {
+    for (const scoredTurn of turnResultsMap.values()) {
+      const list = groupedTurnMap.get(scoredTurn.source_id);
+      if (list) {
+        list.push(scoredTurn);
+      } else {
+        groupedTurnMap.set(scoredTurn.source_id, [scoredTurn]);
+      }
+
+      // Populate legacy phrase matches for backwards compatibility
+      const repPhrase = scoredTurn.phrases[0];
+      if (repPhrase) {
+        const legacyMatch: ScoredPhraseMatch = {
+          ...repPhrase,
+          matchType: 'english',
+          score: scoredTurn.score,
+          matchedWordIndices: [],
+          matchedConfidence: scoredTurn.matchedConfidence,
+        };
+        const pList = groupedPhraseMap.get(scoredTurn.source_id);
+        if (pList) {
+          pList.push(legacyMatch);
+        } else {
+          groupedPhraseMap.set(scoredTurn.source_id, [legacyMatch]);
+        }
+      }
+    }
+  } else {
+    for (const match of resultsMap.values()) {
+      const list = groupedPhraseMap.get(match.source_id);
+      if (list) {
+        list.push(match);
+      } else {
+        groupedPhraseMap.set(match.source_id, [match]);
+      }
     }
   }
 
+  const allSourceIds = Array.from(
+    new Set([...groupedPhraseMap.keys(), ...groupedTurnMap.keys()])
+  );
+
   const groupedResults: GroupedSearchResult[] = [];
 
-  for (const [sourceId, matches] of groupedMap.entries()) {
+  for (const sourceId of allSourceIds) {
     const source = sourcesMap.get(sourceId) || {
       source_id: sourceId,
       source_type: 'dictionary_collection',
@@ -270,18 +327,33 @@ export function searchCorpus(
       sort_order: 999,
     };
 
-    matches.sort((a, b) => compareScoredMatches(a, b, sortBy));
+    const matches = groupedPhraseMap.get(sourceId) || [];
+    const turnMatches = groupedTurnMap.get(sourceId) || [];
 
-    const topConfidence = matches.reduce((acc, m) => {
-      const c =
-        m.matchType === 'english' ? m.mean_confidence : m.matchedConfidence;
-      return Math.max(acc, c);
-    }, 0);
+    matches.sort((a, b) => compareScoredMatches(a, b, sortBy));
+    turnMatches.sort((a, b) =>
+      compareScoredTurnMatches(a, b, sortBy, sourcesMap)
+    );
+
+    const topConfidence =
+      mode === 'english'
+        ? turnMatches.reduce(
+            (acc, t) => Math.max(acc, t.matchedConfidence),
+            0
+          )
+        : matches.reduce((acc, m) => {
+            const c =
+              m.matchType === 'english'
+                ? m.mean_confidence
+                : m.matchedConfidence;
+            return Math.max(acc, c);
+          }, 0);
 
     groupedResults.push({
       source,
       matches,
-      topConfidence,
+      turnMatches,
+      topConfidence: Number(topConfidence.toFixed(4)),
     });
   }
 
@@ -408,6 +480,72 @@ export function flattenAndSortMatches(
   });
 
   return allMatches;
+}
+
+/**
+ * Pure sorting comparator for two scored turn matches under a given SortOption.
+ */
+export function compareScoredTurnMatches(
+  a: ScoredTurnMatch,
+  b: ScoredTurnMatch,
+  sortBy: SortOption,
+  sourcesMap: Map<string, DocumentMeta>
+): number {
+  if (sortBy === 'shortest_sentence') {
+    const aCount = (a.syllabary_text || '').split(/\s+/).filter(Boolean).length;
+    const bCount = (b.syllabary_text || '').split(/\s+/).filter(Boolean).length;
+    if (aCount !== bCount) return aCount - bCount;
+    if (Math.abs(b.matchedConfidence - a.matchedConfidence) > 0.001) {
+      return b.matchedConfidence - a.matchedConfidence;
+    }
+    return a.loc_index - b.loc_index;
+  }
+
+  if (sortBy === 'phrase_confidence') {
+    if (Math.abs(b.mean_confidence - a.mean_confidence) > 0.001) {
+      return b.mean_confidence - a.mean_confidence;
+    }
+    return a.loc_index - b.loc_index;
+  }
+
+  if (sortBy === 'canonical') {
+    const srcA = sourcesMap.get(a.source_id);
+    const srcB = sourcesMap.get(b.source_id);
+    const sortA = srcA ? srcA.sort_order : 999;
+    const sortB = srcB ? srcB.sort_order : 999;
+    if (sortA !== sortB) return sortA - sortB;
+    return a.loc_index - b.loc_index;
+  }
+
+  // Default: matched_confidence
+  if (Math.abs(b.score - a.score) > 0.001) {
+    return b.score - a.score;
+  }
+  if (Math.abs(b.matchedConfidence - a.matchedConfidence) > 0.001) {
+    return b.matchedConfidence - a.matchedConfidence;
+  }
+  return a.loc_index - b.loc_index;
+}
+
+/**
+ * Flattens all grouped turn matches and sorts them globally across sources.
+ */
+export function flattenAndSortTurnMatches(
+  groupedResults: GroupedSearchResult[],
+  sortBy: SortOption,
+  sourcesMap: Map<string, DocumentMeta>
+): ScoredTurnMatch[] {
+  const allTurns: ScoredTurnMatch[] = [];
+  for (const group of groupedResults) {
+    if (group.turnMatches) {
+      for (const turn of group.turnMatches) {
+        allTurns.push(turn);
+      }
+    }
+  }
+
+  allTurns.sort((a, b) => compareScoredTurnMatches(a, b, sortBy, sourcesMap));
+  return allTurns;
 }
 
 /**

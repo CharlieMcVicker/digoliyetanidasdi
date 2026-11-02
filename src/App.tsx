@@ -48,6 +48,7 @@ export const App: React.FC = () => {
     activeFilterCount,
     groupedResults,
     flatResults,
+    flatTurnResults,
     totalMatches,
     scoredMatchesMap,
   } = useCorpusSearch({
@@ -144,6 +145,7 @@ export const App: React.FC = () => {
             groupBySource={groupBySource}
             groupedResults={groupedResults}
             flatResults={flatResults}
+            flatTurnResults={flatTurnResults}
             sourcesMap={sourcesMap}
             turnPartCountsMap={turnPartCountsMap}
             activeAudioPhraseId={activeAudioPhraseId}

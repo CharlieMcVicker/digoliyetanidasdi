@@ -72,9 +72,45 @@ export interface ScoredPhraseMatch extends PhraseRecord {
   matchedConfidence: number;
 }
 
+export interface WordTurnTiming {
+  phraseId: string;
+  phraseIndex: number;
+  wordIndex: number;
+  word: string;
+  startSec: number;
+  endSec: number;
+}
+
+export interface TurnRecord {
+  id: string;
+  turn_id: string;
+  source_id: string;
+  speaker_label: string;
+  loc_label: string;
+  loc_index: number;
+  english_text: string | null;
+  turn_audio_path: string | null;
+  turn_start_sec: number;
+  turn_end_sec: number;
+  duration_sec: number;
+  mean_confidence: number;
+  has_anomalies: boolean;
+  phrases: PhraseRecord[];
+  syllabary_text: string;
+  phonetic_text: string;
+  phonetic_broad: string;
+}
+
+export interface ScoredTurnMatch extends TurnRecord {
+  matchType: 'english';
+  score: number;
+  matchedConfidence: number;
+}
+
 export interface GroupedSearchResult {
   source: DocumentMeta;
   matches: ScoredPhraseMatch[];
+  turnMatches?: ScoredTurnMatch[];
   topConfidence: number;
 }
 
