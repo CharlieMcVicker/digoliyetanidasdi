@@ -1,11 +1,11 @@
 ---
 id: TASK-31
 title: Publish v0.2.0 audio release and update deployment workflow
-status: In Progress
+status: Done
 assignee:
   - '@self'
 created_date: '2026-11-03 00:23'
-updated_date: '2026-11-03 00:27'
+updated_date: '2026-11-03 00:31'
 labels: []
 dependencies: []
 modified_files:
@@ -24,7 +24,7 @@ Package the updated MP3 audio archives (including re-sliced Bible verse audio), 
 - [x] #1 Package sentence_audio, split_audio, stv_audio, and stv_turn_audio into tar.gz archives
 - [x] #2 Publish GitHub Release v0.2.0 with all four audio archives attached
 - [x] #3 Update deploy.yml to download audio from v0.2.0 and verify workflow syntax
-- [ ] #4 Push changes to main and verify GitHub Pages deployment succeeds
+- [x] #4 Push changes to main and verify GitHub Pages deployment succeeds
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -35,3 +35,9 @@ Package the updated MP3 audio archives (including re-sliced Bible verse audio), 
 3. Update .github/workflows/deploy.yml to reference v0.2.0
 4. Commit, push to main, and monitor/verify GitHub Actions deployment
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Packaged all four MP3 audio directories (sentence_audio, split_audio, stv_audio, stv_turn_audio) into compressed tar.gz archives (~1.07GB total), published GitHub Release v0.2.0 at https://github.com/CharlieMcVicker/digoliyetanidasdi/releases/tag/v0.2.0, updated .github/workflows/deploy.yml to download and unpack assets from v0.2.0, and verified that GitHub Pages deployment succeeded and live audio requests return HTTP 200.
+<!-- SECTION:FINAL_SUMMARY:END -->
