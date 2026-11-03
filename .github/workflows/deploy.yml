@@ -43,11 +43,11 @@ jobs:
           cp public/data/sources.json dist/data/
           cp public/data/phrases.json dist/data/
 
-      - name: Download and unpack audio assets from release v0.1.0
+      - name: Download and unpack audio assets from release v0.2.0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download v0.1.0 -p "*.tar.gz" --dir /tmp/audio
+          gh release download v0.2.0 -p "*.tar.gz" --dir /tmp/audio
           tar -xzf /tmp/audio/sentence_audio.tar.gz -C dist/
           tar -xzf /tmp/audio/split_audio.tar.gz -C dist/
           tar -xzf /tmp/audio/stv_audio.tar.gz -C dist/
