@@ -61,6 +61,7 @@ PRE_BIBLE_MODEL_REVISION = "76e62140955f4738abdab345ea34068b02d8d2a2"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIR = REPO_ROOT / "public"
 DATA_OUT_DIR = PUBLIC_DIR / "data"
+INTERMEDIATE_DIR = REPO_ROOT / "data" / "intermediate"
 AUDIO_MP3_DIR = REPO_ROOT / "audio_mp3"
 
 SENTENCE_CSV_PATH = WORKSHOP_DIR / "data/training/processed/sentence_audio.csv"
@@ -68,6 +69,9 @@ SENTENCE_AUDIO_DIR = WORKSHOP_DIR / "data/training/processed/sentence_audio"
 BIBLE_RECORDS_PATH = (
     WORKSHOP_DIR
     / "data/projects/cherokee_new_testament/alignments/bible_alignment_records.json"
+)
+BIBLE_TRANSCRIPTS_DIR = (
+    WORKSHOP_DIR / "data/projects/cherokee_new_testament/book_transcripts"
 )
 BIBLE_SPLIT_AUDIO_DIR = AUDIO_MP3_DIR / "split_audio"
 CTC_CACHE_DIR = WORKSHOP_DIR / ".cache/ctc_emissions"
@@ -78,6 +82,24 @@ STV_SPLIT_AUDIO_DIR = AUDIO_MP3_DIR / "stv_audio"
 STV_TURN_AUDIO_DIR = AUDIO_MP3_DIR / "stv_turn_audio"
 STV_ALIGNMENTS_DIR = STV_DIR / "alignments"
 KIWA_BASE_URL = "https://cherokee-language-hub.kiwadigital.com"
+
+COLLECTION_KEYS: Tuple[str, ...] = ("dictionary", "bible", "stv")
+
+NT_BOOK_CODES: Dict[str, str] = {
+    "matthew": "mat",
+    "mark": "mar",
+    "philippians": "php",
+    "titus": "tit",
+    "philemon": "phm",
+}
+
+NT_BOOK_ORDER: Dict[str, int] = {
+    "matthew": 100,
+    "mark": 200,
+    "philippians": 1100,
+    "titus": 1700,
+    "philemon": 1800,
+}
 
 
 def clean_to_canonical_tth(text: str) -> str:
@@ -340,24 +362,25 @@ def build_bible_corpus(
     sources: List[Dict[str, Any]],
     phrases: List[Dict[str, Any]],
 ) -> None:
-    """Ingests the 1,749 aligned Cherokee New Testament verses."""
+    """Ingests aligned Cherokee New Testament verses across all available books."""
     logger.info("Loading New Testament alignments from %s", BIBLE_RECORDS_PATH)
     with open(BIBLE_RECORDS_PATH, "r", encoding="utf-8") as f:
         bible_records = json.load(f)
 
     seen_chapters: set[str] = set()
+    transcripts_cache: Dict[Tuple[str, int], Dict[str, Any]] = {}
     nt_count = 0
 
     for rec in bible_records:
         book = rec["book"].lower()
-        book_code = book[:3]
+        book_code = NT_BOOK_CODES.get(book, book[:3])
         ch_num = int(rec["chapter"])
         v_num = int(rec["verse_idx"])
         source_id = f"nt_{book_code}_{ch_num:02d}"
 
         if source_id not in seen_chapters:
             seen_chapters.add(source_id)
-            sort_base = 100 if book == "matthew" else 200
+            sort_base = NT_BOOK_ORDER.get(book, 9000)
             sources.append(
                 {
                     "source_id": source_id,
@@ -410,6 +433,20 @@ def build_bible_corpus(
         min_conf = round(float(np.min(confs)), 4) if confs else 0.0
         has_anomalies = any(w["flagged"] for w in zero_offset_words)
 
+        eng_text = (rec.get("english") or "").strip() or None
+        if not eng_text:
+            cache_key = (book, ch_num)
+            if cache_key not in transcripts_cache:
+                tr_path = BIBLE_TRANSCRIPTS_DIR / f"{book}_{ch_num:02d}.json"
+                if tr_path.exists():
+                    with open(tr_path, "r", encoding="utf-8") as f:
+                        transcripts_cache[cache_key] = json.load(f)
+                else:
+                    transcripts_cache[cache_key] = {}
+            verse_id = str(rec.get("verse_id", ""))
+            eng_meta = transcripts_cache[cache_key].get(verse_id, {})
+            eng_text = (eng_meta.get("english") or "").strip() or None
+
         phrases.append(
             {
                 "id": f"nt_{book_code}_{ch_num:02d}_{v_num:03d}",
@@ -419,7 +456,7 @@ def build_bible_corpus(
                 "phonetic_text": canonical_tth,
                 "phonetic_broad": create_broad_tth(canonical_tth),
                 "syllabary_text": final_syllabary,
-                "english_text": (rec.get("english") or "").strip() or None,
+                "english_text": eng_text,
                 "audio_path": f"split_audio/{book}_{ch_num:02d}_{v_num:02d}.mp3",
                 "audio_start": 0.0,
                 "audio_end": clip_duration,
@@ -925,82 +962,244 @@ def ensure_audio_symlinks() -> None:
         logger.info("Linked %s -> %s", link_path, target_path)
 
 
+def get_intermediate_path(collection: str) -> Path:
+    return INTERMEDIATE_DIR / f"{collection}.json"
+
+
+def load_intermediate_bundle(collection: str) -> Optional[Dict[str, Any]]:
+    path = get_intermediate_path(collection)
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+
+def save_intermediate_bundle(
+    collection: str,
+    sources: List[Dict[str, Any]],
+    phrases: List[Dict[str, Any]],
+) -> None:
+    INTERMEDIATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = get_intermediate_path(collection)
+    tmp_path = path.with_suffix(".tmp")
+    data = {
+        "collection": collection,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "sources": sources,
+        "phrases": phrases,
+    }
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    tmp_path.replace(path)
+    logger.info("Saved %d sources and %d phrases to %s", len(sources), len(phrases), path)
+
+
+def seed_intermediate_from_public() -> None:
+    """Seeds intermediate files from public/data/ if any are missing."""
+    sources_out = DATA_OUT_DIR / "sources.json"
+    phrases_out = DATA_OUT_DIR / "phrases.json"
+    if not (sources_out.exists() and phrases_out.exists()):
+        return
+
+    INTERMEDIATE_DIR.mkdir(parents=True, exist_ok=True)
+    dict_path = get_intermediate_path("dictionary")
+    bible_path = get_intermediate_path("bible")
+    stv_path = get_intermediate_path("stv")
+
+    need_dict = not dict_path.exists()
+    need_bible = not bible_path.exists()
+    need_stv = not stv_path.exists()
+
+    if not (need_dict or need_bible or need_stv):
+        return
+
+    logger.info("Seeding missing intermediate bundles from %s", DATA_OUT_DIR)
+    with open(sources_out, "r", encoding="utf-8") as f:
+        existing_sources = json.load(f)
+    with open(phrases_out, "r", encoding="utf-8") as f:
+        existing_phrases = json.load(f)
+
+    if need_dict:
+        s = [x for x in existing_sources if x.get("source_type") == "dictionary_collection"]
+        p = [x for x in existing_phrases if x.get("source_id") == "dict_feeling_1975"]
+        if s and p:
+            save_intermediate_bundle("dictionary", s, p)
+
+    if need_bible:
+        s = [x for x in existing_sources if x.get("source_type") == "biblical_chapter"]
+        p = [x for x in existing_phrases if str(x.get("source_id", "")).startswith("nt_")]
+        if s and p:
+            save_intermediate_bundle("bible", s, p)
+
+    if need_stv:
+        s = [x for x in existing_sources if x.get("source_type") == "marked_syllabary_corpus"]
+        p = [x for x in existing_phrases if str(x.get("source_id", "")).startswith("stv_")]
+        if s and p:
+            save_intermediate_bundle("stv", s, p)
+
+
+def build_collection(collection: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Stage 1: Builds a single collection from scratch."""
+    sources: List[Dict[str, Any]] = []
+    phrases: List[Dict[str, Any]] = []
+    if collection == "dictionary":
+        build_dictionary_corpus(sources, phrases)
+    elif collection == "bible":
+        build_bible_corpus(sources, phrases)
+    elif collection == "stv":
+        build_saving_the_voices_corpus(sources, phrases)
+    else:
+        raise ValueError(f"Unknown collection: {collection}")
+    return sources, phrases
+
+
+def merge_intermediate_bundles(
+    target_collections: Sequence[str] = COLLECTION_KEYS,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Stage 2: Merges cached intermediate collection bundles into unified public/data/ artifacts."""
+    all_sources: List[Dict[str, Any]] = []
+    all_phrases: List[Dict[str, Any]] = []
+
+    for col in target_collections:
+        bundle = load_intermediate_bundle(col)
+        if not bundle:
+            logger.warning("Intermediate bundle for '%s' not found; computing now...", col)
+            s, p = build_collection(col)
+            save_intermediate_bundle(col, s, p)
+            all_sources.extend(s)
+            all_phrases.extend(p)
+        else:
+            logger.info(
+                "Loaded cached intermediate bundle for '%s': %d sources, %d phrases",
+                col,
+                len(bundle.get("sources", [])),
+                len(bundle.get("phrases", [])),
+            )
+            all_sources.extend(bundle.get("sources", []))
+            all_phrases.extend(bundle.get("phrases", []))
+
+    all_sources.sort(key=lambda s: s.get("sort_order", 0))
+
+    DATA_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    sources_out = DATA_OUT_DIR / "sources.json"
+    phrases_out = DATA_OUT_DIR / "phrases.json"
+
+    with open(sources_out, "w", encoding="utf-8") as f:
+        json.dump(all_sources, f, indent=2, ensure_ascii=False)
+
+    with open(phrases_out, "w", encoding="utf-8") as f:
+        json.dump(all_phrases, f, ensure_ascii=False)
+
+    logger.info(
+        "Successfully merged into public data: %d sources to %s, %d phrases to %s",
+        len(all_sources),
+        sources_out,
+        len(all_phrases),
+        phrases_out,
+    )
+    return all_sources, all_phrases
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build Cherokee corpus JSON bundles.")
+    parser = argparse.ArgumentParser(
+        description="Two-stage Cherokee corpus builder: compute/cache per-source bundles, then merge into public/data/."
+    )
+    parser.add_argument(
+        "--recompute",
+        nargs="*",
+        default=[],
+        help="Collections to force-recompute ('bible', 'dictionary', 'stv', or 'all'). "
+             "Accepts multiple args or comma-separated values (e.g. --recompute bible).",
+    )
+    parser.add_argument(
+        "--sources",
+        nargs="*",
+        default=["all"],
+        help="Collections to include in the final merged output (default: 'all', or subset of 'bible', 'dictionary', 'stv').",
+    )
+    parser.add_argument(
+        "--merge-only",
+        action="store_true",
+        default=False,
+        help="Skip recomputation and merge existing intermediate cached bundles directly.",
+    )
+    # Backward compatibility flags:
     parser.add_argument(
         "--include-nt",
         action="store_true",
         default=True,
-        help="Include New Testament verses (default: True)",
+        help="(Compat) Include New Testament verses",
     )
     parser.add_argument(
         "--include-stv",
         action="store_true",
         default=True,
-        help="Include Saving the Voices interviews (default: True)",
+        help="(Compat) Include Saving the Voices interviews",
     )
     parser.add_argument(
         "--dict-only",
         action="store_true",
         default=False,
-        help="Only build Dictionary examples (Phase 1 only)",
+        help="(Compat) Only build Dictionary examples",
     )
     parser.add_argument(
         "--reuse-existing-dict-nt",
         action="store_true",
         default=False,
-        help="Reuse existing Dictionary and New Testament records from public/data/ if present",
+        help="(Compat) Reuse existing Dictionary and NT records",
     )
     args = parser.parse_args()
 
     ensure_audio_symlinks()
-    DATA_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    seed_intermediate_from_public()
 
-    sources: List[Dict[str, Any]] = []
-    phrases: List[Dict[str, Any]] = []
+    # Parse --recompute targets
+    recompute_targets: set[str] = set()
+    if not args.merge_only:
+        for item in args.recompute:
+            for part in item.split(","):
+                clean = part.strip().lower()
+                if clean == "all":
+                    recompute_targets.update(COLLECTION_KEYS)
+                elif clean in COLLECTION_KEYS:
+                    recompute_targets.add(clean)
 
-    sources_out = DATA_OUT_DIR / "sources.json"
-    phrases_out = DATA_OUT_DIR / "phrases.json"
-
-    if args.reuse_existing_dict_nt and sources_out.exists() and phrases_out.exists():
-        logger.info("Reusing existing Dictionary & NT records from %s", DATA_OUT_DIR)
-        with open(sources_out, "r", encoding="utf-8") as f:
-            existing_sources = json.load(f)
-        with open(phrases_out, "r", encoding="utf-8") as f:
-            existing_phrases = json.load(f)
-        kept_source_ids = {
-            s["source_id"]
-            for s in existing_sources
-            if s.get("source_type") in ("dictionary_collection", "biblical_chapter")
-        }
-        sources.extend(s for s in existing_sources if s["source_id"] in kept_source_ids)
-        phrases.extend(p for p in existing_phrases if p["source_id"] in kept_source_ids)
+    # Backward compatibility mappings
+    if args.dict_only:
+        target_sources = ["dictionary"]
     else:
-        build_dictionary_corpus(sources, phrases)
-        if args.include_nt and not args.dict_only:
-            build_bible_corpus(sources, phrases)
+        raw_sources: set[str] = set()
+        for item in args.sources:
+            for part in item.split(","):
+                clean = part.strip().lower()
+                if clean == "all":
+                    raw_sources.update(COLLECTION_KEYS)
+                elif clean in COLLECTION_KEYS:
+                    raw_sources.add(clean)
+        target_sources = [c for c in COLLECTION_KEYS if c in raw_sources]
+        if not target_sources:
+            target_sources = list(COLLECTION_KEYS)
 
-    if args.include_stv and not args.dict_only:
-        build_saving_the_voices_corpus(sources, phrases)
+    if args.reuse_existing_dict_nt:
+        recompute_targets.discard("dictionary")
+        recompute_targets.discard("bible")
 
-    sources.sort(key=lambda s: s["sort_order"])
+    # Stage 1: Build / Recompute requested collections
+    for col in COLLECTION_KEYS:
+        if col in recompute_targets:
+            logger.info(">>> Stage 1: Recomputing intermediate bundle for '%s'...", col)
+            sources, phrases = build_collection(col)
+            save_intermediate_bundle(col, sources, phrases)
+        else:
+            bundle_path = get_intermediate_path(col)
+            if not bundle_path.exists() and col in target_sources:
+                logger.info(">>> Stage 1: Initializing missing intermediate bundle for '%s'...", col)
+                sources, phrases = build_collection(col)
+                save_intermediate_bundle(col, sources, phrases)
 
-    sources_out = DATA_OUT_DIR / "sources.json"
-    phrases_out = DATA_OUT_DIR / "phrases.json"
-
-    with open(sources_out, "w", encoding="utf-8") as f:
-        json.dump(sources, f, indent=2, ensure_ascii=False)
-
-    with open(phrases_out, "w", encoding="utf-8") as f:
-        json.dump(phrases, f, ensure_ascii=False)
-
-    logger.info(
-        "Wrote %d sources to %s and %d phrases to %s",
-        len(sources),
-        sources_out,
-        len(phrases),
-        phrases_out,
-    )
+    # Stage 2: Merge into public data
+    logger.info(">>> Stage 2: Merging intermediate bundles for %s...", target_sources)
+    merge_intermediate_bundles(target_sources)
 
 
 if __name__ == "__main__":

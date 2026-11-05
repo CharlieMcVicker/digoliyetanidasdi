@@ -11,6 +11,10 @@ data/saving-the-voices/turn_audio/
 data/saving-the-voices/split_audio/
 public/stv_turn_audio
 
+data/saving-the-voices/alignments_backup/
+data/saving-the-voices/alignments_backup_*/
+data/benchmarks/**/.cache*
+data/intermediate/
+
 audio_mp3/
 audio_archives/
-data/saving-the-voices/alignments_backup/

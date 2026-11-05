@@ -10,12 +10,21 @@ corpus ingestion in scripts/build_corpus.py.
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from build_corpus import convert_marked_segment, convert_marked_token
+from build_corpus import (
+    NT_BOOK_CODES,
+    NT_BOOK_ORDER,
+    convert_marked_segment,
+    convert_marked_token,
+    get_intermediate_path,
+    save_intermediate_bundle,
+    load_intermediate_bundle,
+)
 
 
 class TestMarkedSyllabaryConversion(unittest.TestCase):
@@ -121,6 +130,26 @@ class TestMarkedSyllabaryConversion(unittest.TestCase):
         self.assertEqual(syl, "Mhm Huh Ꮩ ᎤᎵᏍᏔᏂᏙᎴ truckᎢ ᏥᏣᏐᏁ")
         self.assertEqual(phon, "mhm huh to ulsthanitole truck'i tsitssone")
         self.assertEqual(len(syl.split()), len(words))
+
+
+class TestTwoStageCorpusBuilder(unittest.TestCase):
+    def test_nt_book_codes_unique_and_non_colliding(self) -> None:
+        expected_books = {"matthew", "mark", "philippians", "titus", "philemon"}
+        self.assertTrue(expected_books.issubset(set(NT_BOOK_CODES.keys())))
+        codes = [NT_BOOK_CODES[b] for b in expected_books]
+        self.assertEqual(len(codes), len(set(codes)), "Book codes must be unique and non-colliding")
+        self.assertNotEqual(NT_BOOK_CODES["philemon"], NT_BOOK_CODES["philippians"])
+
+    def test_nt_book_canonical_sort_order(self) -> None:
+        self.assertLess(NT_BOOK_ORDER["matthew"], NT_BOOK_ORDER["mark"])
+        self.assertLess(NT_BOOK_ORDER["mark"], NT_BOOK_ORDER["philippians"])
+        self.assertLess(NT_BOOK_ORDER["philippians"], NT_BOOK_ORDER["titus"])
+        self.assertLess(NT_BOOK_ORDER["titus"], NT_BOOK_ORDER["philemon"])
+
+    def test_intermediate_path_resolution(self) -> None:
+        p = get_intermediate_path("bible")
+        self.assertTrue(str(p).endswith("bible.json"))
+        self.assertEqual(p.parent.name, "intermediate")
 
 
 if __name__ == "__main__":

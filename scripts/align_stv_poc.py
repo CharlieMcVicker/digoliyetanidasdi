@@ -64,9 +64,30 @@ SPLIT_AUDIO_DIR = DATA_DIR / "split_audio"
 ALIGNMENTS_DIR = DATA_DIR / "alignments"
 PUBLIC_DIR = REPO_ROOT / "public"
 
+import torch
+
 KIWA_BASE_URL = "https://cherokee-language-hub.kiwadigital.com"
-PRE_BIBLE_MODEL_REPO = "charliemcvicker/length-only-20260704-155307-asr-cherokee-colon"
-PRE_BIBLE_MODEL_REVISION = "76e62140955f4738abdab345ea34068b02d8d2a2"
+
+
+def get_best_model_config() -> Dict[str, str]:
+    path = WORKSHOP_DIR / "best_model.json"
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "repo": "charliemcvicker/bible-augmentation-checkpoint-8000-wav2vec2-large-xlsr",
+        "revision": "1dd927526fd11671ee41890ae393fa6a7c527414",
+    }
+
+
+_BEST_CFG = get_best_model_config()
+DEFAULT_MODEL_REPO = _BEST_CFG.get(
+    "repo", "charliemcvicker/bible-augmentation-checkpoint-8000-wav2vec2-large-xlsr"
+)
+DEFAULT_MODEL_REVISION = _BEST_CFG.get(
+    "revision", "1dd927526fd11671ee41890ae393fa6a7c527414"
+)
+DEFAULT_DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 
 SYL_CHAR_CLASS = r"\u13A0-\u13FF\uAB70-\uABBF"
 SYL_RE = re.compile(f"[{SYL_CHAR_CLASS}]")
@@ -96,6 +117,50 @@ class PhraseSlice:
     min_confidence: float
     has_anomalies: bool
     words: List[Dict[str, Any]]
+
+
+def serialize_word_interval(w: WordInterval) -> Dict[str, Any]:
+    return {
+        "word": w.word,
+        "start_sec": w.start_sec,
+        "end_sec": w.end_sec,
+        "confidence": float(w.confidence),
+        "flagged": getattr(w, "flagged", False),
+        "emitted_word": getattr(w, "emitted_word", None),
+    }
+
+
+def deserialize_word_interval(d: Dict[str, Any]) -> WordInterval:
+    return WordInterval(
+        word=d["word"],
+        start_sec=float(d["start_sec"]),
+        end_sec=float(d["end_sec"]),
+        confidence=float(d.get("confidence", 1.0)),
+        flagged=bool(d.get("flagged", False)),
+        emitted_word=d.get("emitted_word"),
+    )
+
+
+def serialize_aligned_chunk(c: AlignedChunk) -> Dict[str, Any]:
+    return {
+        "chunk_id": c.chunk_id,
+        "start_sec": c.start_sec,
+        "end_sec": c.end_sec,
+        "words": [serialize_word_interval(w) for w in (c.words or [])],
+        "distance_score": getattr(c, "distance_score", 0.0),
+        "emitted_text": getattr(c, "emitted_text", ""),
+    }
+
+
+def deserialize_aligned_chunk(d: Dict[str, Any]) -> AlignedChunk:
+    return AlignedChunk(
+        chunk_id=d["chunk_id"],
+        start_sec=d["start_sec"],
+        end_sec=d["end_sec"],
+        words=[deserialize_word_interval(w) for w in d.get("words", [])],
+        distance_score=float(d.get("distance_score", 0.0)),
+        emitted_text=d.get("emitted_text", ""),
+    )
 
 
 def clean_cherokee_syllabary_tokens(text: str) -> str:
@@ -254,23 +319,55 @@ def align_interview(
     source_id: str = "stv_0003_dj_vann",
     asset_id: str = "saving-the-voices-0003-dj-vann",
     limit_turns: Optional[int] = None,
-    device: str = "cpu",
+    device: str = DEFAULT_DEVICE,
     model: Optional[CherokeeASRModel] = None,
     aligner: Optional[CTCSegmentationAligner] = None,
+    model_repo: str = DEFAULT_MODEL_REPO,
+    model_revision: str = DEFAULT_MODEL_REVISION,
+    force: bool = False,
+    resume: bool = True,
 ) -> Dict[str, Any]:
     """
-    Runs the full end-to-end alignment pipeline for an interview.
+    Runs the full end-to-end alignment pipeline for an interview with turn-level resumability.
     """
     timing_stats: Dict[str, float] = {}
     total_t0 = time.time()
 
-    # Step 1: Download Audio
-    t0 = time.time()
     RAW_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     TURN_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     SPLIT_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     ALIGNMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
+    manifest_out = ALIGNMENTS_DIR / f"{source_id}_aligned.json"
+    if not force and manifest_out.exists():
+        try:
+            with open(manifest_out, "r", encoding="utf-8") as f:
+                existing_m = json.load(f)
+            if (
+                existing_m.get("model_repo") == model_repo
+                and existing_m.get("model_revision") == model_revision
+            ):
+                logger.info(
+                    "Interview [%s] is already fully aligned with %s (%s). Skipping.",
+                    source_id,
+                    model_repo,
+                    model_revision,
+                )
+                return {
+                    "source_id": source_id,
+                    "turns_processed": existing_m.get("aligned_turns", 0),
+                    "phrases_generated": len(existing_m.get("phrases", [])),
+                    "cherokee_audio_min": round(
+                        float(existing_m.get("cherokee_speech_sec", 0.0)) / 60.0, 2
+                    ),
+                    "timing_stats": {"total_pipeline_sec": 0.0, "status": "skipped_already_done"},
+                    "manifest_path": str(manifest_out),
+                }
+        except Exception as e:
+            logger.warning("Could not parse existing manifest %s: %s", manifest_out, e)
+
+    # Step 1: Download Audio
+    t0 = time.time()
     col_path = DATA_DIR / "saving-the-voices.json"
     with open(col_path, "r", encoding="utf-8") as f:
         col_data = json.load(f)
@@ -310,13 +407,13 @@ def align_interview(
     segments = t_data.get("segments", [])
     timing_stats["load_transcript_sec"] = round(time.time() - t0, 3)
 
-    # Step 4: Initialize Pre-Bible ASR Model & Aligner
+    # Step 4: Initialize ASR Model & Aligner
     t0 = time.time()
     if model is None or aligner is None:
-        logger.info("Initializing Pre-Bible ASR Model (%s on %s)...", PRE_BIBLE_MODEL_REPO, device)
+        logger.info("Initializing Cherokee ASR Model (%s on %s)...", model_repo, device)
         model = CherokeeASRModel.from_pretrained_or_best(
-            path_or_repo=PRE_BIBLE_MODEL_REPO,
-            revision=PRE_BIBLE_MODEL_REVISION,
+            path_or_repo=model_repo,
+            revision=model_revision,
             device=device,
         )
         ctc_config = create_cherokee_ctc_config(
@@ -330,7 +427,7 @@ def align_interview(
         aligner = CTCSegmentationAligner(model=model, config=ctc_config)
         timing_stats["init_model_sec"] = round(time.time() - t0, 3)
     else:
-        logger.info("Reusing existing Pre-Bible ASR Model and CTCSegmentationAligner instances.")
+        logger.info("Reusing existing Cherokee ASR Model and CTCSegmentationAligner instances.")
         timing_stats["init_model_sec"] = 0.0
 
     # Step 5: Turn-by-Turn Pre-Slicing, VAD & CTC Alignment
@@ -362,9 +459,56 @@ def align_interview(
     if limit_turns is not None:
         valid_segments = valid_segments[:limit_turns]
 
+    # Check for incremental turn checkpoint
+    checkpoint_path = ALIGNMENTS_DIR / f".{source_id}_checkpoint.json"
+    start_turn_idx = 0
+    if resume and not force and checkpoint_path.exists():
+        try:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
+                cp = json.load(f)
+            if (
+                cp.get("model_repo") == model_repo
+                and cp.get("model_revision") == model_revision
+            ):
+                start_turn_idx = int(cp.get("last_completed_turn_idx", 0))
+                aligned_phrase_slices = [
+                    PhraseSlice(**ps) for ps in cp.get("aligned_phrase_slices", [])
+                ]
+                aligned_chunks_for_export = [
+                    deserialize_aligned_chunk(c)
+                    for c in cp.get("aligned_chunks_for_export", [])
+                ]
+                source_lookup_for_export = cp.get("source_lookup_for_export", {})
+                syllabary_words_tier = [
+                    deserialize_word_interval(w)
+                    for w in cp.get("syllabary_words_tier", [])
+                ]
+                english_words_tier = [
+                    deserialize_word_interval(w)
+                    for w in cp.get("english_words_tier", [])
+                ]
+                timing = cp.get("timing", {})
+                turn_count = int(timing.get("turn_count", start_turn_idx))
+                aligned_turn_count = int(timing.get("aligned_turn_count", 0))
+                skipped_laugh_count = int(timing.get("skipped_laugh_count", 0))
+                total_cherokee_audio_sec = float(timing.get("total_cherokee_audio_sec", 0.0))
+                logger.info(
+                    "Resuming [%s] from turn %d/%d (%d phrases already aligned)...",
+                    source_id,
+                    start_turn_idx + 1,
+                    len(valid_segments),
+                    len(aligned_phrase_slices),
+                )
+        except Exception as e:
+            logger.warning("Could not restore checkpoint from %s: %s", checkpoint_path, e)
+            start_turn_idx = 0
+
     logger.info("Starting turn alignment for %d Cherokee segments...", len(valid_segments))
 
     for seg_idx, seg in enumerate(valid_segments, 1):
+        if seg_idx <= start_turn_idx:
+            continue
+
         seg_id = str(seg.get("id") or f"seg-{seg_idx:03d}")
         raw_text = (seg.get("text") or "").strip()
         en_trans = (seg.get("translation") or "").strip() or None
@@ -424,11 +568,6 @@ def align_interview(
             cid = ac.chunk_id
             c_clean_syl = turn_meta[cid]["syllabary"].split()
             c_words = ac.words
-
-            # Fallback if words count differs from clean syllabary words
-            if len(c_clean_syl) != len(c_words) and c_words:
-                # Reconcile token counts using proportional word partitioning
-                pass
 
             sub_phrases = partition_words_into_phrases(
                 words=c_words,
@@ -563,6 +702,37 @@ def align_interview(
                     "translation": en_trans or "",
                 }
 
+        # Flush incremental turn checkpoint
+        if resume:
+            cp_data = {
+                "source_id": source_id,
+                "asset_id": asset_id,
+                "model_repo": model_repo,
+                "model_revision": model_revision,
+                "last_completed_turn_idx": seg_idx,
+                "aligned_phrase_slices": [asdict(ps) for ps in aligned_phrase_slices],
+                "aligned_chunks_for_export": [
+                    serialize_aligned_chunk(c) for c in aligned_chunks_for_export
+                ],
+                "source_lookup_for_export": source_lookup_for_export,
+                "syllabary_words_tier": [
+                    serialize_word_interval(w) for w in syllabary_words_tier
+                ],
+                "english_words_tier": [
+                    serialize_word_interval(w) for w in english_words_tier
+                ],
+                "timing": {
+                    "turn_count": turn_count,
+                    "aligned_turn_count": aligned_turn_count,
+                    "skipped_laugh_count": skipped_laugh_count,
+                    "total_cherokee_audio_sec": total_cherokee_audio_sec,
+                },
+            }
+            tmp_cp = checkpoint_path.with_suffix(".tmp")
+            with open(tmp_cp, "w", encoding="utf-8") as f:
+                json.dump(cp_data, f, ensure_ascii=False)
+            tmp_cp.replace(checkpoint_path)
+
         if seg_idx % 20 == 0 or seg_idx == len(valid_segments):
             logger.info("Processed %d/%d turns (%.1f%%)...", seg_idx, len(valid_segments), 100.0 * seg_idx / len(valid_segments))
 
@@ -576,6 +746,9 @@ def align_interview(
             {
                 "source_id": source_id,
                 "asset_id": asset_id,
+                "model_repo": model_repo,
+                "model_revision": model_revision,
+                "aligned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "total_turns": turn_count,
                 "aligned_turns": aligned_turn_count,
                 "total_phrases": len(aligned_phrase_slices),
@@ -611,6 +784,13 @@ def align_interview(
     except Exception as e:
         logger.warning("Could not export Praat TextGrid: %s", e)
 
+    # Clean up checkpoint upon successful completion
+    if checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+        except Exception:
+            pass
+
     timing_stats["export_artifacts_sec"] = round(time.time() - t0, 3)
     timing_stats["total_pipeline_sec"] = round(time.time() - total_t0, 3)
 
@@ -633,10 +813,14 @@ def main():
         "--interviews",
         nargs="*",
         default=None,
-        help="Interview numbers to align (e.g. 0005 0015 0067 0002)",
+        help="Interview numbers to align (e.g. 0005 0015 0067 0002 or 'all')",
     )
+    parser.add_argument("--model-repo", default=DEFAULT_MODEL_REPO, help="ASR model repo")
+    parser.add_argument("--model-revision", default=DEFAULT_MODEL_REVISION, help="ASR model revision")
     parser.add_argument("--limit-turns", type=int, default=None, help="Limit number of turns for rapid testing")
-    parser.add_argument("--device", default="cpu", help="Torch device ('cpu' or 'mps'/'cuda')")
+    parser.add_argument("--device", default=DEFAULT_DEVICE, help="Torch device ('mps', 'cuda', 'cpu')")
+    parser.add_argument("--force", action="store_true", help="Force realignment even if already completed with model")
+    parser.add_argument("--no-resume", action="store_true", help="Disable turn-level checkpoint resuming")
     args = parser.parse_args()
 
     # Determine interviews to process
@@ -675,13 +859,13 @@ def main():
         asset_id = args.asset_id or "saving-the-voices-0003-dj-vann"
         interview_targets.append((source_id, asset_id))
 
-    logger.info("Starting alignment run for %d interview(s)...", len(interview_targets))
+    logger.info("Starting alignment run for %d interview(s) with model %s (%s) on %s...", len(interview_targets), args.model_repo, args.model_revision, args.device)
 
     # Initialize model once and reuse across interviews
-    logger.info("Pre-loading Pre-Bible ASR Model (%s on %s)...", PRE_BIBLE_MODEL_REPO, args.device)
+    logger.info("Pre-loading Cherokee ASR Model (%s on %s)...", args.model_repo, args.device)
     shared_model = CherokeeASRModel.from_pretrained_or_best(
-        path_or_repo=PRE_BIBLE_MODEL_REPO,
-        revision=PRE_BIBLE_MODEL_REVISION,
+        path_or_repo=args.model_repo,
+        revision=args.model_revision,
         device=args.device,
     )
     shared_ctc_config = create_cherokee_ctc_config(
@@ -706,6 +890,10 @@ def main():
             device=args.device,
             model=shared_model,
             aligner=shared_aligner,
+            model_repo=args.model_repo,
+            model_revision=args.model_revision,
+            force=args.force,
+            resume=not args.no_resume,
         )
         all_results.append(res)
 

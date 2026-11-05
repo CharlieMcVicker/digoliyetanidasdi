@@ -68,8 +68,12 @@ Use the `cherokee-asr` Conda environment (`/opt/homebrew/Caskroom/miniconda/base
 # Run batch forced alignment on Saving the Voices interviews (CPU / ARM NEON)
 /opt/homebrew/Caskroom/miniconda/base/envs/cherokee-asr/bin/python scripts/align_stv_poc.py --interviews 0001 0004 0006 0010 --device cpu
 
-# Rebuild public/data/sources.json and public/data/phrases.json
-/opt/homebrew/Caskroom/miniconda/base/envs/cherokee-asr/bin/python scripts/build_corpus.py --reuse-existing-dict-nt
+# Rebuild public/data/sources.json and public/data/phrases.json (two-stage builder)
+# Recompute only a specific collection (e.g. bible) and merge:
+/opt/homebrew/Caskroom/miniconda/base/envs/cherokee-asr/bin/python scripts/build_corpus.py --recompute bible
+
+# Fast merge from cached intermediate bundles without recomputing:
+/opt/homebrew/Caskroom/miniconda/base/envs/cherokee-asr/bin/python scripts/build_corpus.py --merge-only
 
 # Run Python unit tests
 /opt/homebrew/Caskroom/miniconda/base/envs/cherokee-asr/bin/python -m unittest scripts/test_align_stv_poc.py scripts/test_build_corpus.py

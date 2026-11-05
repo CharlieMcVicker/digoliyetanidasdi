@@ -270,6 +270,54 @@
     "sort_order": 1000
   },
   {
+    "source_id": "nt_php_01",
+    "source_type": "biblical_chapter",
+    "title": "Philippians 1",
+    "sort_order": 1101
+  },
+  {
+    "source_id": "nt_php_02",
+    "source_type": "biblical_chapter",
+    "title": "Philippians 2",
+    "sort_order": 1102
+  },
+  {
+    "source_id": "nt_php_03",
+    "source_type": "biblical_chapter",
+    "title": "Philippians 3",
+    "sort_order": 1103
+  },
+  {
+    "source_id": "nt_php_04",
+    "source_type": "biblical_chapter",
+    "title": "Philippians 4",
+    "sort_order": 1104
+  },
+  {
+    "source_id": "nt_tit_01",
+    "source_type": "biblical_chapter",
+    "title": "Titus 1",
+    "sort_order": 1701
+  },
+  {
+    "source_id": "nt_tit_02",
+    "source_type": "biblical_chapter",
+    "title": "Titus 2",
+    "sort_order": 1702
+  },
+  {
+    "source_id": "nt_tit_03",
+    "source_type": "biblical_chapter",
+    "title": "Titus 3",
+    "sort_order": 1703
+  },
+  {
+    "source_id": "nt_phm_01",
+    "source_type": "biblical_chapter",
+    "title": "Philemon 1",
+    "sort_order": 1801
+  },
+  {
     "source_id": "stv_0001_toney_cornshucker",
     "source_type": "marked_syllabary_corpus",
     "title": "Saving the Voices: Toney Cornshucker (ᏙᎾ)",
